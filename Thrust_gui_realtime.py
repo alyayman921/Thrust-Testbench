@@ -11,21 +11,28 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import scrolledtext
 from tkinter import simpledialog
+from matplotlib.figure import Figure
 from serial_sniffer import serial_ports
 from serial_communicator import Serial_Communications
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.ticker
 
 sp=serial_ports()
 print(sp)
-connected=False 
+running=False
+expanded=False
 currentDIR=os.getcwd()
 armed=False
 kill = False  
-calibrate_state=False # Did you calibrate the esc
 speed=0
 Thrust_value=0
-settings=[1,0,10,0.2]
+settings=[5,0,25,0.5]
+PWM_vector=[]
 test_name=""
-data=""
+last_update_time = 0
+update_interval = 0.1  # Update graph every 100ms
+max_points = 1000  # Maximum points to display
+line = None  # For storing the plot line reference
 
 def Send(a): # Send to Serial Port func
     global Serial
@@ -37,28 +44,28 @@ def Send_text(event=None): # Send to Serial Port from user input
         Serial.send(serial_sender.get()) # serial_sender is the textbox
         serial_sender.delete(0, tk.END)
 
-def refreshSerialPorts(event=None): # checks if a serial port is connected or disconnected while connected
+def refreshSerialPorts(event=None): # checks if a serial port is connected or disconnected while running
     global sp
     sp=serial_ports()
     SerialPorts['values'] = (sp) 
 
 def connect_clicked():
-    global connected,c,Serial,t0
+    global running,c,Serial,t0
     refreshSerialPorts()
-    if connected==True:
+    if running==True:
         print('stopped')
         connect.itemconfig(toggle_text,text='COM Stopped')
-        connected=False
+        running=False
         Serial.close()
     else :
-        connected = True
+        running = True
+        print('started')
+        connect.itemconfig(toggle_text,text='COM Started')
         t0=time.time()
         try:
-            print('started')
-            connect.itemconfig(toggle_text,text='COM Started')
             COM=SerialPorts.get()
             Serial=Serial_Communications(COM,9600)
-            #serial_clicked()
+            serial_clicked()
             pass
         except Exception as e:
             print('Error While Opening Serial Port')
@@ -66,9 +73,12 @@ def connect_clicked():
 def start_clicked():
     global armed,kill
     global speed
+
     if armed:
         if start.itemconfig(toggle_text)['text'][4] == 'Start Test':  # If button says "Start Test"
             kill = False  # Reset kill flag
+            Send("i")
+            reset_graph()
             testThread = threading.Thread(target=test_loop)
             testThread.start()
             start.itemconfig(toggle_text, text='Stop Test')
@@ -80,15 +90,15 @@ def start_clicked():
             Send(0)  # Send 0 to stop the motor
             Send("e")
     else:
-        Send("0") 
-        Send("e") # Disarm the motor
+        Send("0") # Disarm the motor
+        Send("e")
         start.itemconfig(toggle_text, text='Start Test')
         start.itemconfig(startB, outline=green)
 
 def test_loop():
-    global kill, settings, t0, data
+    global kill, settings, t0
     t0 = time.time()  # Reset time reference when test starts
-    Send('i') #INIT TEST START
+    
     pwm_step = settings[0]
     pwm_start = settings[1]
     pwm_end = settings[2]
@@ -98,92 +108,83 @@ def test_loop():
     while pwm <= pwm_end and not kill:
         start_time = time.time()
         set_speed(pwm)
+        
         # Continuously send PWM and receive data for the entire timestep duration
         while (time.time() - start_time) < timestep and not kill:
             Send(pwm)  # Continuously send PWM signal
-            time.sleep(0.01)  # Small delay to avoid overwhelming serial       
+            time.sleep(0.01)  # Small delay to avoid overwhelming serial
+            
         pwm += pwm_step
-
-    #Read Inputs
-    serial_clicked()
-    time.sleep(0.2)
-    logger_clicked()# log
-    # Stop the test in 
-    #start_clicked()
+        
+    logger_clicked() # log
+    start_clicked() # Stop the test
     if kill:
         print("Test stopped")
-        kill=True
     else:
         print("Test completed, automatically logged")
 
 def serial_clicked():
-    #serialThread=threading.Thread(target=SerialRefresh).start()
-    serialThread=threading.Thread(target=SerialMonitorRefresh).start()
-
-def SerialRefresh():
-    global Serial,data
-    while True:
-        readings = Serial.read()
-        data+=readings+'\n'
+    global expanded
+    if expanded:
+        expanded=False
+        root.geometry("1280x720")
+        root.after(0, root.update)
+    else:
+        expanded=True
+        root.geometry("1280x905")
+        root.after(0, root.update)
+        serialThread=threading.Thread(target=SerialMonitorRefresh).start()
 
 def SerialMonitorRefresh():
-    global Serial,data
+    global Serial
     buffer = []
     last_flush_time = time.time()
     
     while True:
         readings = Serial.read()
-        data+=readings
-
-def logger_clicked():
-    global data
-    Data=""
-    data.strip()
-    lines=data.split('$')
-    for line in lines:
-        Data+=line[:-3]
-        Data+='\n'
-    save_readings(Data)
-    data=""
-
-def save_readings(data):
-    global test_name
-    if test_name=="":
-        import datetime
-        now = datetime.datetime.now()
-        test_name = now.strftime("%y-%m-%d-%H-%M-%S")
-
-    filename = f"Thrust-Test-{test_name}.csv"            
-    with open(filename, "w") as file:
-        file.write("SSTL Thrust Test Platform\n")
-        file.write("Time,PWM,Thrust\n")
-        file.write(f"{data}\n")
-    print(f"File '{filename}' created and values written successfully.")
+        if readings and readings.count(',') >= 2:  # Basic format check
+            buffer.append(readings)
+            
+            current_time = time.time()
+            if current_time - last_flush_time > 0.1 or len(buffer) > 10:
+                for reading in buffer:
+                    try:
+                        # Quick validation before processing
+                        parts = reading.split(',')
+                        if len(parts) >= 3:
+                            float(parts[0])  # Test conversion
+                            float(parts[1])
+                            float(parts[2])
+                            Thrust_Title_Change(parts[2])
+                            update_graph(reading)
+                            serial_monitor.insert(tk.END, reading + '\n')
+                    except ValueError:
+                        print(f"Skipping malformed data: {reading}")
+                
+                serial_monitor.see(tk.END)
+                buffer.clear()
+                last_flush_time = current_time
+        else:
+            time.sleep(0.01)
 
 def arm_clicked():
-    global armed,calibrate_state
+    global armed
     if not(armed):
         armed=True
-        if not calibrate_state: # Make a seperate button perhaps
-            Send("c") # Command the esc Calibration
-            time.sleep(4)# wait for esc to init
-            calibrate_state=True;
-            print("Calibrated")
-
         ##Change button color
         arm.itemconfig(toggle_text,text='Armed')
         arm.itemconfig(armB,outline=green)
         print("Armed")
     else:
         armed=False
-        Send("0") # set speed = 0
-        Send('e') # Disarm the motor
+        Send("0") # Disarm the motor
         arm.itemconfig(toggle_text,text='Not Armed')
         arm.itemconfig(armB,outline=red)
         print("Not armed")
 
 def test_clicked():
     global settings
+
     # Create a new window
     settings_window = tk.Toplevel(root)
     settings_window.title("PWM Settings")
@@ -235,7 +236,7 @@ def test_clicked():
     
     # Save button functionality
     def save_and_close():
-        global settings, test_name
+        global settings
         # Store the values in variables
         test_name=test_name_var.get()
         pwm_step = float(pwm_step_var.get())
@@ -265,7 +266,7 @@ def test_clicked():
 def set_speed(value):
         global speed
         speed = value
-        #Label3.config(text=f"PWM Cycle = {speed}%")
+        Label3.config(text=f"PWM Cycle = {speed}%")
 
 def open_speed_window():
     speed_window = tk.Toplevel()
@@ -301,9 +302,78 @@ def open_speed_window():
     add_button = tk.Button(speed_window, text="Send Custom Speed", command=add_custom_speed)
     add_button.pack(pady=5)
 
+    
 def Thrust_Title_Change(t):
-    noting=0
-    #Label2.config(text=f'Thrust= {t}')
+    Label2.config(text=f'Thrust= {t}')
+
+def update_graph(readings):
+    global x, y, last_update_time, line, PWM_vector, speed
+    
+    try:
+        # Clean and split the data
+        readings = readings.strip()
+        if not readings:
+            return
+            
+        parts = [p.strip() for p in readings.split(',')]
+        if len(parts) < 3:
+            return
+            
+        # Convert to floats
+        current_time = time.time() - t0
+        thrust_val = float(parts[2])
+        
+        x.append(current_time)
+        y.append(thrust_val)
+        PWM_vector.append(speed)
+        
+        # Recreate line if it doesn't exist
+        if line is None:
+            line, = axis.plot(x, y, 'b-')
+        else:
+            line.set_data(x, y)
+        
+        # Auto-scale the view
+        axis.relim()
+        axis.autoscale_view()
+        
+        # Ensure x-axis moves with time
+        if current_time > axis.get_xlim()[1]:
+            axis.set_xlim(0, current_time * 1.1)
+        
+        # Ensure y-axis shows reasonable range
+        if len(y) > 0:
+            y_min = min(0, min(y))  # Start y-axis at 0 or lowest value
+            y_max = max(y) * 1.1 if max(y) > 0 else 1  # Add 10% headroom
+            axis.set_ylim(y_min, y_max)
+        
+        fig1.draw_idle()
+        
+    except ValueError as e:
+        print(f"Data conversion error: {e} - {readings}")
+
+def reset_graph():
+    global x, y, PWM_vector, last_update_time, line
+    x.clear()
+    y.clear()
+    PWM_vector.clear()
+    last_update_time = time.time()
+    
+    axis.clear()
+    axis.set_title("Thrust vs Time", color='#001122')
+    axis.set_ylabel("Force")
+    axis.set_xlabel("Time (s)")
+    axis.set_facecolor("#dddddd")
+    axis.tick_params(axis='x', colors='#001122')
+    axis.tick_params(axis='y', colors='#001122')
+    
+    # Reset the line object
+    line = None
+    
+    # Set initial axis limits
+    axis.set_xlim(0, 10)  # Start with 10 second window
+    axis.set_ylim(0, 10)  # Start with 0-10 force range
+    fig1.draw()
 
 def change_color(feature,new_color):
     #feature.itemconfig(f"{feature}B", outline=new_color)
@@ -329,8 +399,32 @@ def on_mouse_move(event):
   lastx = event.widget.winfo_pointerx()
   lasty = event.widget.winfo_pointery()
 
+def logger_clicked():
+    global x,y,PWM_vector
+    i=0
+    readings=""
+    while i<len(x):
+        readings+=f"{x[i]},{PWM_vector[i]},{y[i]}\n"
+        i+=1
+    save_readings(readings)
+
+def save_readings(data):
+    global test_name
+    if test_name=="":
+        import datetime
+        now = datetime.datetime.now()
+        test_name = now.strftime("%y-%m-%d-%H-%M-%S")
+    
+    filename = f"Thrust-{test_name}.csv"            
+    with open(filename, "w") as file:
+        file.write("SSTL Thrust Test Platform\n")
+        file.write("Time,PWM,Thrust\n")
+        file.write(f"{data}\n")
+    print(f"File '{filename}' created and values written successfully.")
+
 def debug_shortcuts(event):
     global  t0,armed,kill
+    global x,y,y2
     readings=""
     i=0
     # Define actions based on the key pressed
@@ -338,13 +432,13 @@ def debug_shortcuts(event):
         Send("0")
         armed=False
         kill=True
-'''
+
 def detect_key_press():
     # Hook the key press event to the debug_shortcuts function
-    keyboard.on_press(debug_shortcuts)
-
+    #keyboard.on_press(debug_shortcuts)
+    sexo=1
 detect_key_press()
-'''
+
 # GUI WINDOW
 normal_color = "#5b3065" #border
 hover_color = "#ba5da3"
@@ -358,6 +452,36 @@ root.geometry('1280x720+200+10')
 root.resizable(False, False)
 root.config(bg='#dddddd') # background
 
+#root.iconbitmap(f"{currentDIR}/controller_assets/icon.ico")
+
+#Figures
+Thrust_Figure = Figure(figsize=(5, 2.8), dpi=200)
+Thrust_Figure.patch.set_facecolor("#dddddd")
+axis = Thrust_Figure.add_subplot(111)
+axis.set_title("Thrust figure")
+#axis.set_xlabel("Time")
+axis.set_ylabel("Force")
+axis.set_facecolor("#dddddd")
+axis.tick_params(axis='x', colors='#001122')  # Change x-axis ticks color
+axis.tick_params(axis='y', colors='#001122')  # Change y-axis ticks color
+axis.set_title("Thrust vs Time", color='#001122')  # Change title color
+#axis.legend()
+x = []
+y = []
+fig1 = FigureCanvasTkAgg(Thrust_Figure, root)
+fig1.get_tk_widget().pack()
+fig1.get_tk_widget().place(x=50,y=50)
+
+#Thrust
+T="0"
+Label2=tk.Label(root,text=f'Thrust = {T}',font="play 16 bold",fg="#001122", bg="#dddddd",highlightthickness=0)
+Label2.pack()
+Label2.place(x=1000,y=120)
+
+#Motor Speed
+Label3=tk.Label(root,text=f'PWM Cycle = 0%',font="play 16 bold",fg="#001122", bg="#dddddd",highlightthickness=0)
+Label3.pack()
+Label3.place(x=1000,y=150)
 
 
 # Serial port picker
@@ -443,6 +567,24 @@ arm.bind("<ButtonRelease-1>", lambda event: arm_clicked())
 arm.bind("<Enter>", lambda event: change_color(arm,hover_color))
 arm.bind("<Leave>", lambda event: change_color(arm,normal_color))
 
+
+# Speed Controller
+
+'''
+speed_controller = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0) #button
+speedB = speed_controller.create_polygon(
+p1,p2,p3,p4,p5,p6,p7,
+outline=normal_color, width=2,
+fill=fill_color
+)
+speed_controller.create_text((160*0.75,40*0.75), text="Speed Controller", font="Play 12 bold",fill="white")
+speed_controller.place(x=530,y=620)
+speed_controller.bind("<Enter>", lambda event: change_color(speed_controller,hover_color))
+speed_controller.bind("<Enter>", lambda event: move_cursor())
+speed_controller.bind("<Leave>", lambda event: change_color(speed_controller,normal_color))
+speed_controller.bind("<Button-1>", lambda event: change_color(speed_controller,press_color))
+speed_controller.bind("<ButtonRelease-1>", lambda event: open_speed_window())
+'''
 
 # Logger
 logger = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0) #button
