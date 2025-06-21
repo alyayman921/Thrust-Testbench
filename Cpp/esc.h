@@ -1,6 +1,4 @@
 #include <Servo.h>
-#include <time.h>
-#include <string.h>
 
 class Motor{
   public:
@@ -8,7 +6,6 @@ class Motor{
     int pin;
     int pwm;
     int microSecs;
-    String Calibration_state;
     Motor(int pin) {
       this->pin=pin;
   }
@@ -29,8 +26,6 @@ class Motor{
         //Serial.println("Sending High pulse");
         myMotor.writeMicroseconds(1000); 
         delay(2000);                
-
- 
         //Serial.println("Calibration done");
     }
   };

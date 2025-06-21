@@ -7,21 +7,25 @@ import threading
 import pyautogui
 import numpy as np
 import tkinter as tk
+import matplotlib.ticker
 from tkinter import *
 from tkinter import ttk
 from tkinter import scrolledtext
 from tkinter import simpledialog
+from matplotlib.figure import Figure
 from serial_sniffer import serial_ports
 from serial_communicator import Serial_Communications
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 sp=serial_ports()
 print(sp)
-connected=False 
 currentDIR=os.getcwd()
-armed=False
+connected=False 
 kill = False  
-autolog=False
+autolog=True
 calibrate_state=False # Did you calibrate the esc
+serial_thread = None
+serial_thread_running = False
 speed=0
 Thrust_value=0
 settings=[1,0,10,0.2]
@@ -33,10 +37,8 @@ def Send(a): # Send to Serial Port func
     Serial.send(f"{a}")
 
 def Send_text(event=None): # Send to Serial Port from user input
-    global b,Serial,armed
-    if armed:
-        Serial.send(serial_sender.get()) # serial_sender is the textbox
-        serial_sender.delete(0, tk.END)
+    Serial.send(serial_sender.get()) # serial_sender is the textbox
+    serial_sender.delete(0, tk.END)
 
 def refreshSerialPorts(event=None): # checks if a serial port is connected or disconnected while connected
     global sp
@@ -44,12 +46,16 @@ def refreshSerialPorts(event=None): # checks if a serial port is connected or di
     SerialPorts['values'] = (sp) 
 
 def connect_clicked():
-    global connected,c,Serial,t0
+    global connected,c,Serial,serial_thread_running
     refreshSerialPorts()
     if connected==True:
         print('stopped')
+        Send('e')
         connect.itemconfig(toggle_text,text='COM Stopped')
         connected=False
+        serial_thread_running = False  # Signal thread to stop
+        if serial_thread and serial_thread.is_alive():
+            serial_thread.join(timeout=1.0)  # Wait for thread to finish
         Serial.close()
     else :
         connected = True
@@ -60,37 +66,29 @@ def connect_clicked():
             COM=SerialPorts.get()
             Serial=Serial_Communications(COM,9600)
             fix_autostart()
-            #serial_clicked()
             pass
         except Exception as e:
             print('Error While Opening Serial Port')
 
 def fix_autostart():
-    arm_clicked()
     Send("i")
     Send("0")
     Send("e")
-    arm_clicked()
+
 
 def start_clicked():
-    global armed,kill
-    global speed
-    if armed:
-        if start.itemconfig(toggle_text)['text'][4] == 'Start Test':  # If button says "Start Test"
-            kill = False  # Reset kill flag
-            testThread = threading.Thread(target=test_loop)
-            testThread.start()
-            start.itemconfig(toggle_text, text='Stop Test')
-            start.itemconfig(startB, outline=red)
-        else:  # If button says "Stop Test"
-            kill = True  # Set kill flag to stop the loop
-            start.itemconfig(toggle_text, text='Start Test')
-            start.itemconfig(startB, outline=green)
-            Send(0)  # Send 0 to stop the motor
-            Send("e")
-    else:
-        Send("0") 
-        Send("e") # Disarm the motor
+    global kill
+    if start.itemconfig(toggle_text)['text'][4] == 'Start Test':  
+        kill = False  # Reset kill flag
+        testThread = threading.Thread(target=test_loop)
+        testThread.start()
+        start.itemconfig(toggle_text, text='Stop Test')
+        start.itemconfig(startB, outline=red)
+        serial_read_start()
+    # If button says "Stop Test"
+    else: 
+        kill = True  # Set kill flag to stop the loop
+        Send("e")
         start.itemconfig(toggle_text, text='Start Test')
         start.itemconfig(startB, outline=green)
 
@@ -98,50 +96,46 @@ def test_loop():
     global kill, settings, t0, data,autolog
     t0 = time.time()  # Reset time reference when test starts
     Send('i') #INIT TEST START
+    start.itemconfig(toggle_text, text='Testing')
     pwm_step = settings[0]
     pwm_start = settings[1]
     pwm_end = settings[2]
     timestep = settings[3]
-    
     pwm = pwm_start
     while pwm <= pwm_end and not kill:
-        start_time = time.time()
+        print(pwm)
         set_speed(pwm)
-        # Continuously send PWM and receive data for the entire timestep duration
-        while (time.time() - start_time) < timestep and not kill:
-            Send(pwm)  # Continuously send PWM signal
-            time.sleep(0.05)  # Small delay to avoid overwhelming serial       
-        pwm += pwm_step
-
-    #Read Inputs
-    serial_clicked()
+        Send(pwm)  # PWM signal Once
+        time.sleep(timestep) 
+        pwm+=pwm_step     
+    Send('e') #End Test
     time.sleep(0.2)
     if autolog:
         logger_clicked()
     if kill:
         print("Test stopped")
+        Send('e') #End Test
         kill=True
+        start.itemconfig(toggle_text, text='Start Test')
     else:
         print("Test completed, automatically logged")
+        kill=True
+        start.itemconfig(toggle_text, text='Start Test')
 
-def serial_clicked():
-    #serialThread=threading.Thread(target=SerialRefresh).start()
-    serialThread=threading.Thread(target=SerialMonitorRefresh).start()
+def serial_read_start():
+    global serial_thread, serial_thread_running
+    if not serial_thread_running:
+        serial_thread_running = True
+        serial_thread = threading.Thread(target=SerialRefresh)
+        serial_thread.daemon = True  # Terminate when main exits
+        serial_thread.start()
 
 def SerialRefresh():
-    global Serial,data
-    while True:
+    global Serial, data, serial_thread_running
+    while serial_thread_running:
         readings = Serial.read()
-        data+=readings+'\n'
-
-def SerialMonitorRefresh():
-    global Serial,data
-    buffer = []
-    last_flush_time = time.time()
-    
-    while True:
-        readings = Serial.read()
-        data+=readings
+        if readings != "" and readings != '\n':
+            data += readings
 
 def logger_clicked():
     global data
@@ -149,13 +143,13 @@ def logger_clicked():
     data.strip()
     lines=data.split('$')
     for line in lines:
-        Data+=line[:-3]
-        Data+='\n'
+        Data+=line
     save_readings(Data)
+    Data=""
     data=""
 
 def save_readings(data):
-    global test_name
+    global test_name,kill
     if test_name=="":
         import datetime
         now = datetime.datetime.now()
@@ -164,26 +158,17 @@ def save_readings(data):
     filename = f"Thrust-Test-{test_name}.csv"            
     with open(filename, "w") as file:
         file.write("SSTL Thrust Test Platform\n")
-        file.write("Time,PWM,Thrust\n")
-        file.write(f"{data}\n")
+        file.write("time,pwm,current,rpm,thrust,torque\n")
+        #file.write(f"{data}\n")
     print(f"File '{filename}' created and values written successfully.")
 
-def arm_clicked():
-    global armed,calibrate_state
-    if not(armed):
-        armed=True
-
+def graph_manim():
         ##Change button color
-        arm.itemconfig(toggle_text,text='Armed')
-        arm.itemconfig(armB,outline=green)
-        print("Armed")
-    else:
-        armed=False
-        Send("0") # set speed = 0
-        Send('e') # Disarm the motor
-        arm.itemconfig(toggle_text,text='Not Armed')
+        manimG.itemconfig(toggle_text,text='Graphing')
+        manimG.itemconfig(manimB,outline=green)
+        # do something here
+        arm.itemconfig(toggle_text,text='Exported')
         arm.itemconfig(armB,outline=red)
-        print("Not armed")
 
 def calibrate_clicked():
     Calibrate.itemconfig(toggle_text, text="Calibrate")
@@ -194,7 +179,6 @@ def calibrate_clicked():
     Calibrate.itemconfig(calibrateB,outline=green)
 
 def test_clicked():
-    global settings
     # Create a new window
     settings_window = tk.Toplevel(root)
     settings_window.title("PWM Settings")
@@ -254,14 +238,10 @@ def test_clicked():
         pwm_end = float(pwm_end_var.get())
         timestep = float(timestep_var.get())
         settings = [pwm_step,pwm_start,pwm_end,timestep]
-        
         # Print them (you can use them as needed)
         print("Saved values:")
         print(f"Run Name: {test_name}")
-        print(f"PWM Step: {pwm_step}")
-        print(f"PWM Start: {pwm_start}")
-        print(f"PWM End: {pwm_end}")
-        print(f"Timestep: {timestep}")
+        print(settings)
         
         # Close the settings window
         settings_window.destroy()
@@ -340,6 +320,76 @@ def on_mouse_move(event):
   lastx = event.widget.winfo_pointerx()
   lasty = event.widget.winfo_pointery()
 
+def update_graph(readings):
+    global x, y, last_update_time, line, PWM_vector, speed
+    
+    try:
+        # Clean and split the data
+        readings = readings.strip()
+        if not readings:
+            return
+            
+        parts = [p.strip() for p in readings.split(',')]
+        if len(parts) < 3:
+            return
+            
+        # Convert to floats
+        current_time = time.time() - t0
+        thrust_val = float(parts[2])
+        
+        x.append(current_time)
+        y.append(thrust_val)
+        PWM_vector.append(speed)
+        
+        # Recreate line if it doesn't exist
+        if line is None:
+            line, = axis.plot(x, y, 'b-')
+        else:
+            line.set_data(x, y)
+        
+        # Auto-scale the view
+        axis.relim()
+        axis.autoscale_view()
+        
+        # Ensure x-axis moves with time
+        if current_time > axis.get_xlim()[1]:
+            axis.set_xlim(0, current_time * 1.1)
+        
+        # Ensure y-axis shows reasonable range
+        if len(y) > 0:
+            y_min = min(0, min(y))  # Start y-axis at 0 or lowest value
+            y_max = max(y) * 1.1 if max(y) > 0 else 1  # Add 10% headroom
+            axis.set_ylim(y_min, y_max)
+        
+        fig1.draw_idle()
+        
+    except ValueError as e:
+        print(f"Data conversion error: {e} - {readings}")
+
+def reset_graph():
+    global x, y, PWM_vector, last_update_time, line
+    x.clear()
+    y.clear()
+    PWM_vector.clear()
+    last_update_time = time.time()
+    
+    axis.clear()
+    axis.set_title("Thrust vs Time", color='#001122')
+    axis.set_ylabel("Force")
+    axis.set_xlabel("Time (s)")
+    axis.set_facecolor("#dddddd")
+    axis.tick_params(axis='x', colors='#001122')
+    axis.tick_params(axis='y', colors='#001122')
+    
+    # Reset the line object
+    line = None
+    
+    # Set initial axis limits
+    axis.set_xlim(0, 10)  # Start with 10 second window
+    axis.set_ylim(0, 10)  # Start with 0-10 force range
+    fig1.draw()
+
+
 def debug_shortcuts(event):
     global  t0,armed,kill
     readings=""
@@ -384,6 +434,35 @@ SerialPorts['values'] = (sp)
 SerialPorts.pack(pady=15,padx=20,side=("right"))
 SerialPorts.current() 
 
+
+#Figures
+Thrust_Figure = Figure(figsize=(5, 2.8), dpi=200)
+Thrust_Figure.patch.set_facecolor("#dddddd")
+axis = Thrust_Figure.add_subplot(111)
+axis.set_title("Thrust figure")
+#axis.set_xlabel("Time")
+axis.set_ylabel("Force")
+axis.set_facecolor("#dddddd")
+axis.tick_params(axis='x', colors='#001122')  # Change x-axis ticks color
+axis.tick_params(axis='y', colors='#001122')  # Change y-axis ticks color
+axis.set_title("Thrust vs Time", color='#001122')  # Change title color
+#axis.legend()
+x = []
+y = []
+fig1 = FigureCanvasTkAgg(Thrust_Figure, root)
+fig1.get_tk_widget().pack()
+fig1.get_tk_widget().place(x=50,y=50)
+
+#Thrust
+T="0"
+Label2=tk.Label(root,text=f'Thrust = {T}',font="play 16 bold",fg="#001122", bg="#dddddd",highlightthickness=0)
+Label2.pack()
+Label2.place(x=1000,y=120)
+
+#Motor Speed
+Label3=tk.Label(root,text=f'PWM Cycle = 0%',font="play 16 bold",fg="#001122", bg="#dddddd",highlightthickness=0)
+Label3.pack()
+Label3.place(x=1000,y=150)
 
 
 #Connect button
@@ -434,7 +513,7 @@ start.bind("<ButtonRelease-1>", lambda event: start_clicked())
 
 
 #arm button
-arm = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0)
+manimG = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0)
 p1 = (10*0.75, 10*0.75)
 p2=(10*0.75,35*0.75)
 p3=(15*0.75,45*0.75)
@@ -442,17 +521,17 @@ p4=(15*0.75,70*0.75)
 p5=(310*0.75,70*0.75)
 p6=(310*0.75,25*0.75)
 p7=(295*0.75,10*0.75)
-armB = arm.create_polygon(
+manimB = manimG.create_polygon(
 p1,p2,p3,p4,p5,p6,p7,
 outline=normal_color, width=3,
 fill=fill_color
 )
-toggle_text=arm.create_text((160*0.75,40*0.75), text="Arm", font="Play 12 bold",fill="white")
-arm.place(x=775,y=620)
-arm.bind("<Button-1>", lambda event: change_color(arm,press_color))
-arm.bind("<ButtonRelease-1>", lambda event: arm_clicked())
-arm.bind("<Enter>", lambda event: change_color(arm,hover_color))
-arm.bind("<Leave>", lambda event: change_color(arm,normal_color))
+toggle_text=manimG.create_text((160*0.75,40*0.75), text="Animate Graph", font="Play 12 bold",fill="white")
+manimG.place(x=280,y=620)
+manimG.bind("<Button-1>", lambda event: change_color(manimG,press_color))
+manimG.bind("<ButtonRelease-1>", lambda event: graph_manim())
+manimG.bind("<Enter>", lambda event: change_color(manimG,hover_color))
+manimG.bind("<Leave>", lambda event: change_color(manimG,normal_color))
 
 
 # Logger
@@ -484,7 +563,7 @@ outline=normal_color, width=3,
 fill=fill_color
 )
 toggle_text=test.create_text((160*0.75,40*0.75), text="Define Test", font="Play 12 bold",fill="white")
-test.place(x=280,y=620)
+test.place(x=775,y=620)
 
 test.bind("<Enter>", lambda event: change_color(test,hover_color))
 test.bind("<Leave>", lambda event: change_color(test,normal_color))
