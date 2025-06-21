@@ -20,6 +20,7 @@ connected=False
 currentDIR=os.getcwd()
 armed=False
 kill = False  
+autolog=False
 calibrate_state=False # Did you calibrate the esc
 speed=0
 Thrust_value=0
@@ -58,10 +59,18 @@ def connect_clicked():
             connect.itemconfig(toggle_text,text='COM Started')
             COM=SerialPorts.get()
             Serial=Serial_Communications(COM,9600)
+            fix_autostart()
             #serial_clicked()
             pass
         except Exception as e:
             print('Error While Opening Serial Port')
+
+def fix_autostart():
+    arm_clicked()
+    Send("i")
+    Send("0")
+    Send("e")
+    arm_clicked()
 
 def start_clicked():
     global armed,kill
@@ -86,7 +95,7 @@ def start_clicked():
         start.itemconfig(startB, outline=green)
 
 def test_loop():
-    global kill, settings, t0, data
+    global kill, settings, t0, data,autolog
     t0 = time.time()  # Reset time reference when test starts
     Send('i') #INIT TEST START
     pwm_step = settings[0]
@@ -101,15 +110,14 @@ def test_loop():
         # Continuously send PWM and receive data for the entire timestep duration
         while (time.time() - start_time) < timestep and not kill:
             Send(pwm)  # Continuously send PWM signal
-            time.sleep(0.01)  # Small delay to avoid overwhelming serial       
+            time.sleep(0.05)  # Small delay to avoid overwhelming serial       
         pwm += pwm_step
 
     #Read Inputs
     serial_clicked()
     time.sleep(0.2)
-    logger_clicked()# log
-    # Stop the test in 
-    #start_clicked()
+    if autolog:
+        logger_clicked()
     if kill:
         print("Test stopped")
         kill=True
@@ -164,11 +172,6 @@ def arm_clicked():
     global armed,calibrate_state
     if not(armed):
         armed=True
-        if not calibrate_state: # Make a seperate button perhaps
-            Send("c") # Command the esc Calibration
-            time.sleep(4)# wait for esc to init
-            calibrate_state=True;
-            print("Calibrated")
 
         ##Change button color
         arm.itemconfig(toggle_text,text='Armed')
@@ -181,6 +184,14 @@ def arm_clicked():
         arm.itemconfig(toggle_text,text='Not Armed')
         arm.itemconfig(armB,outline=red)
         print("Not armed")
+
+def calibrate_clicked():
+    Calibrate.itemconfig(toggle_text, text="Calibrate")
+    Calibrate.itemconfig(calibrateB,outline=red)
+    Send('c')
+    time.sleep(4)
+    Calibrate.itemconfig(toggle_text, text="Calibrated")
+    Calibrate.itemconfig(calibrateB,outline=green)
 
 def test_clicked():
     global settings
@@ -481,18 +492,18 @@ test.bind("<Button-1>", lambda event: change_color(test,press_color))
 test.bind("<ButtonRelease-1>", lambda event: test_clicked())
 
 # Serial monitor
-sm_button = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0) #button
-smB = sm_button.create_polygon(
+Calibrate = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0) #button
+calibrateB = Calibrate.create_polygon(
 p1,p2,p3,p4,p5,p6,p7,
 outline=normal_color, width=2,
 fill=fill_color
 )
-sm_button.create_text((160*0.75,40*0.75), text="Serial Monitor", font="Play 12 bold",fill="white")
-sm_button.place(x=30,y=620)
-sm_button.bind("<Enter>", lambda event: change_color(sm_button,hover_color))
-sm_button.bind("<Leave>", lambda event: change_color(sm_button,normal_color))
-sm_button.bind("<Button-1>", lambda event: change_color(sm_button,press_color))
-sm_button.bind("<ButtonRelease-1>", lambda event: serial_clicked())
+Calibrate.create_text((160*0.75,40*0.75), text="Calibrate", font="Play 12 bold",fill="white")
+Calibrate.place(x=30,y=620)
+#Calibrate.bind("<Enter>", lambda event: change_color(Calibrate,hover_color))
+#Calibrate.bind("<Leave>", lambda event: change_color(Calibrate,normal_color))
+Calibrate.bind("<Button-1>", lambda event: change_color(Calibrate,press_color))
+Calibrate.bind("<ButtonRelease-1>", lambda event: calibrate_clicked())
 
 serial_frame=Frame(width=1280,height=180)
 serial_frame.place(y=720)
