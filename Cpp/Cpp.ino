@@ -8,11 +8,11 @@ String command;
 float PWM,T,t0,t1,t2;
 float pushSpeed_TEST(float PWM);
 
-
 void setup() {
   // put your setup code here, to run once:
-  Motor1.connect();
-  Serial.begin(9600);
+Motor1.connect();
+Motor1.speed(0);
+Serial.begin(9600);
   pinMode(LED_BUILTIN,OUTPUT);
   pinMode(A0,INPUT); 
 }
@@ -71,7 +71,7 @@ void loop() {
             Serial.print(T);
             Serial.print(',');
             Serial.print("Torque");
-            Serial.println("$"); // NO NEW LINE?
+            Serial.print("$"); // NO NEW LINE?
             t1=t2;
   }
   } 

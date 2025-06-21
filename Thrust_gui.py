@@ -14,7 +14,6 @@ from tkinter import simpledialog
 from serial_sniffer import serial_ports
 from serial_communicator import Serial_Communications
 
-
 sp=serial_ports()
 print(sp)
 currentDIR=os.getcwd()
@@ -136,14 +135,14 @@ def SerialRefresh():
 
 def logger_clicked():
     global data
-    Data=""
-    data.strip()
-    lines=data.split('$')
+    Output_Data=""
+    lines=data.strip().split('$')
     for line in lines:
-        Data+=line
-        Data+='\n'
-    save_readings(Data)
-    Data=""
+        if line!="":
+            Output_Data+=line
+            Output_Data+='\n'
+    save_readings(Output_Data)
+    Output_Data=""
     data=""
 
 def save_readings(data):
@@ -157,7 +156,7 @@ def save_readings(data):
     with open(filename, "w") as file:
         file.write("SSTL Thrust Test Platform\n")
         file.write("time,pwm,current,rpm,thrust,torque\n")
-        file.write(f"{data}\n")
+        file.write(f"{data}")
     print(f"File '{filename}' created and values written successfully.")
 
 def graph_manim():
@@ -270,7 +269,8 @@ def on_mouse_down(event):
   lasty = event.widget.winfo_pointery()
 
 def move_cursor():
-    if not armed:
+    global connected
+    if not connected:
         direction=[-1,1]
         a=random.randint(50,200)*random.choice(direction)
         b=random.randint(50,200)*random.choice(direction)
@@ -290,16 +290,15 @@ def debug_shortcuts(event):
     i=0
     # Define actions based on the key pressed
     if event.name == 'space':
-        Send("0")
-        armed=False
+        Send("e")
         kill=True
-'''
+
 def detect_key_press():
     # Hook the key press event to the debug_shortcuts function
     keyboard.on_press(debug_shortcuts)
 
 detect_key_press()
-'''
+
 # GUI WINDOW
 normal_color = "#5b3065" #border
 hover_color = "#ba5da3"
@@ -313,8 +312,6 @@ root.geometry('1280x720+200+10')
 root.resizable(False, False)
 root.config(bg='#dddddd') # background
 
-
-
 # Serial port picker
 port_frame=tk.Frame(root,bg='#dddddd')
 port_frame.pack()
@@ -327,8 +324,6 @@ SerialPorts = ttk.Combobox(port_frame, width = 7, textvariable = n)
 SerialPorts['values'] = (sp) 
 SerialPorts.pack(pady=15,padx=20,side=("right"))
 SerialPorts.current() 
-
-
 
 #Connect button
 connect = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0)
@@ -352,8 +347,6 @@ connect.bind("<Leave>", lambda event: change_color(connect,normal_color))
 connect.bind("<Button-1>", lambda event: change_color(connect,press_color))
 connect.bind("<ButtonRelease-1>", lambda event: connect_clicked())
 
-
-
 #Start Test button
 start = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0)
 p1 = (10*0.75, 10*0.75)
@@ -371,7 +364,10 @@ fill=fill_color
 
 toggle_text=start.create_text((160*0.75,40*0.75), text="Start Test", font="Play 12 bold",fill="white")
 start.place(x=1025,y=620)
-start.bind("<Enter>", lambda event: change_color(start,hover_color))
+if connected:
+    start.bind("<Enter>", lambda event: change_color(start,hover_color))
+else:
+    start.bind("<Enter>", lambda event: move_cursor())
 start.bind("<Leave>", lambda event: change_color(start,normal_color))
 start.bind("<Button-1>", lambda event: change_color(start,press_color))
 start.bind("<ButtonRelease-1>", lambda event: start_clicked())
