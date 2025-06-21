@@ -7,15 +7,13 @@ import threading
 import pyautogui
 import numpy as np
 import tkinter as tk
-import matplotlib.ticker
 from tkinter import *
 from tkinter import ttk
 from tkinter import scrolledtext
 from tkinter import simpledialog
-from matplotlib.figure import Figure
 from serial_sniffer import serial_ports
 from serial_communicator import Serial_Communications
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 
 sp=serial_ports()
 print(sp)
@@ -23,9 +21,9 @@ currentDIR=os.getcwd()
 connected=False 
 kill = False  
 autolog=True
-calibrate_state=False # Did you calibrate the esc
 serial_thread = None
 serial_thread_running = False
+calibrate_state=False # Did you calibrate the esc
 speed=0
 Thrust_value=0
 settings=[1,0,10,0.2]
@@ -46,17 +44,17 @@ def refreshSerialPorts(event=None): # checks if a serial port is connected or di
     SerialPorts['values'] = (sp) 
 
 def connect_clicked():
-    global connected,c,Serial,serial_thread_running
+    global connected, serial_thread_running,Serial
     refreshSerialPorts()
     if connected==True:
         print('stopped')
         Send('e')
         connect.itemconfig(toggle_text,text='COM Stopped')
         connected=False
+        Serial.close()
         serial_thread_running = False  # Signal thread to stop
         if serial_thread and serial_thread.is_alive():
             serial_thread.join(timeout=1.0)  # Wait for thread to finish
-        Serial.close()
     else :
         connected = True
         t0=time.time()
@@ -75,22 +73,22 @@ def fix_autostart():
     Send("0")
     Send("e")
 
-
 def start_clicked():
-    global kill
-    if start.itemconfig(toggle_text)['text'][4] == 'Start Test':  
-        kill = False  # Reset kill flag
-        testThread = threading.Thread(target=test_loop)
-        testThread.start()
-        start.itemconfig(toggle_text, text='Stop Test')
-        start.itemconfig(startB, outline=red)
-        serial_read_start()
-    # If button says "Stop Test"
-    else: 
-        kill = True  # Set kill flag to stop the loop
-        Send("e")
-        start.itemconfig(toggle_text, text='Start Test')
-        start.itemconfig(startB, outline=green)
+    global kill,connected
+    if connected:
+        if start.itemconfig(toggle_text)['text'][4] == 'Start Test':  
+            kill = False  # Reset kill flag
+            testThread = threading.Thread(target=test_loop)
+            testThread.start()
+            start.itemconfig(toggle_text, text='Stop Test')
+            start.itemconfig(startB, outline=red)
+            serial_read_start()
+        # If button says "Stop Test"
+        else: 
+            kill = True  # Set kill flag to stop the loop
+            Send("e")
+            start.itemconfig(toggle_text, text='Start Test')
+            start.itemconfig(startB, outline=green)
 
 def test_loop():
     global kill, settings, t0, data,autolog
@@ -114,7 +112,6 @@ def test_loop():
         logger_clicked()
     if kill:
         print("Test stopped")
-        Send('e') #End Test
         kill=True
         start.itemconfig(toggle_text, text='Start Test')
     else:
@@ -144,6 +141,7 @@ def logger_clicked():
     lines=data.split('$')
     for line in lines:
         Data+=line
+        Data+='\n'
     save_readings(Data)
     Data=""
     data=""
@@ -159,7 +157,7 @@ def save_readings(data):
     with open(filename, "w") as file:
         file.write("SSTL Thrust Test Platform\n")
         file.write("time,pwm,current,rpm,thrust,torque\n")
-        #file.write(f"{data}\n")
+        file.write(f"{data}\n")
     print(f"File '{filename}' created and values written successfully.")
 
 def graph_manim():
@@ -258,40 +256,6 @@ def set_speed(value):
         speed = value
         #Label3.config(text=f"PWM Cycle = {speed}%")
 
-def open_speed_window():
-    speed_window = tk.Toplevel()
-    speed_window.title("Select Speed")
-    # Create buttons for 25%, 50%, 75%, and 100%
-    buttons = [("0%", 0),("25%", 25), ("50%", 50), ("75%", 75), ("100%", 100)]
-
-    for (text, value) in buttons:
-        button = tk.Button(speed_window, text=text, command=lambda v=value: set_value(v,speed_window))
-        button.pack(pady=5)
-    # Entry for custom speed input
-    custom_entry = tk.Entry(speed_window)
-    custom_entry.pack(pady=5)
-    def set_value(v,window):
-        set_speed(v)
-        close_window(window)
-    def close_window(window):
-        speed_window.destroy()  # Close the window
-
-    def add_custom_speed():
-        try:
-            custom_value = float(custom_entry.get())
-            if custom_value < 0:
-                custom_value= -custom_value
-            if custom_value> 100:
-                custom_value=100
-            set_speed(custom_value)
-            close_window(speed_window)
-        except ValueError:
-            print("Please enter a valid number")
-
-    # Button to add custom speed
-    add_button = tk.Button(speed_window, text="Send Custom Speed", command=add_custom_speed)
-    add_button.pack(pady=5)
-
 def Thrust_Title_Change(t):
     noting=0
     #Label2.config(text=f'Thrust= {t}')
@@ -319,76 +283,6 @@ def on_mouse_move(event):
   root.geometry("+%d+%d" % (root.winfo_x() + deltax, root.winfo_y() + deltay))
   lastx = event.widget.winfo_pointerx()
   lasty = event.widget.winfo_pointery()
-
-def update_graph(readings):
-    global x, y, last_update_time, line, PWM_vector, speed
-    
-    try:
-        # Clean and split the data
-        readings = readings.strip()
-        if not readings:
-            return
-            
-        parts = [p.strip() for p in readings.split(',')]
-        if len(parts) < 3:
-            return
-            
-        # Convert to floats
-        current_time = time.time() - t0
-        thrust_val = float(parts[2])
-        
-        x.append(current_time)
-        y.append(thrust_val)
-        PWM_vector.append(speed)
-        
-        # Recreate line if it doesn't exist
-        if line is None:
-            line, = axis.plot(x, y, 'b-')
-        else:
-            line.set_data(x, y)
-        
-        # Auto-scale the view
-        axis.relim()
-        axis.autoscale_view()
-        
-        # Ensure x-axis moves with time
-        if current_time > axis.get_xlim()[1]:
-            axis.set_xlim(0, current_time * 1.1)
-        
-        # Ensure y-axis shows reasonable range
-        if len(y) > 0:
-            y_min = min(0, min(y))  # Start y-axis at 0 or lowest value
-            y_max = max(y) * 1.1 if max(y) > 0 else 1  # Add 10% headroom
-            axis.set_ylim(y_min, y_max)
-        
-        fig1.draw_idle()
-        
-    except ValueError as e:
-        print(f"Data conversion error: {e} - {readings}")
-
-def reset_graph():
-    global x, y, PWM_vector, last_update_time, line
-    x.clear()
-    y.clear()
-    PWM_vector.clear()
-    last_update_time = time.time()
-    
-    axis.clear()
-    axis.set_title("Thrust vs Time", color='#001122')
-    axis.set_ylabel("Force")
-    axis.set_xlabel("Time (s)")
-    axis.set_facecolor("#dddddd")
-    axis.tick_params(axis='x', colors='#001122')
-    axis.tick_params(axis='y', colors='#001122')
-    
-    # Reset the line object
-    line = None
-    
-    # Set initial axis limits
-    axis.set_xlim(0, 10)  # Start with 10 second window
-    axis.set_ylim(0, 10)  # Start with 0-10 force range
-    fig1.draw()
-
 
 def debug_shortcuts(event):
     global  t0,armed,kill
@@ -434,35 +328,6 @@ SerialPorts['values'] = (sp)
 SerialPorts.pack(pady=15,padx=20,side=("right"))
 SerialPorts.current() 
 
-
-#Figures
-Thrust_Figure = Figure(figsize=(5, 2.8), dpi=200)
-Thrust_Figure.patch.set_facecolor("#dddddd")
-axis = Thrust_Figure.add_subplot(111)
-axis.set_title("Thrust figure")
-#axis.set_xlabel("Time")
-axis.set_ylabel("Force")
-axis.set_facecolor("#dddddd")
-axis.tick_params(axis='x', colors='#001122')  # Change x-axis ticks color
-axis.tick_params(axis='y', colors='#001122')  # Change y-axis ticks color
-axis.set_title("Thrust vs Time", color='#001122')  # Change title color
-#axis.legend()
-x = []
-y = []
-fig1 = FigureCanvasTkAgg(Thrust_Figure, root)
-fig1.get_tk_widget().pack()
-fig1.get_tk_widget().place(x=50,y=50)
-
-#Thrust
-T="0"
-Label2=tk.Label(root,text=f'Thrust = {T}',font="play 16 bold",fg="#001122", bg="#dddddd",highlightthickness=0)
-Label2.pack()
-Label2.place(x=1000,y=120)
-
-#Motor Speed
-Label3=tk.Label(root,text=f'PWM Cycle = 0%',font="play 16 bold",fg="#001122", bg="#dddddd",highlightthickness=0)
-Label3.pack()
-Label3.place(x=1000,y=150)
 
 
 #Connect button
