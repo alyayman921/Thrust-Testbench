@@ -2,6 +2,7 @@
 #include <time.h>
 #include <string.h>
 Motor Motor1(9);
+
 bool Armed=0; // 
 char received; 
 String command;
@@ -53,7 +54,6 @@ void loop() {
           // Reset buffer
           command=""; 
     }
-    
   }
   t2=millis();
   if(Armed && t2-t1>=50.0){// when the test starts, send the data at a rate of 20 hz
@@ -64,18 +64,17 @@ void loop() {
             Serial.print(',');
             Serial.print(PWM);
             Serial.print(',');
-            Serial.print("Current");
+            Serial.print(0); // Current A reading
             Serial.print(',');
-            Serial.print("RPM");
+            Serial.print(0); // RPM reading
             Serial.print(',');
-            Serial.print(T);
+            Serial.print(T);// Thrust reading
             Serial.print(',');
-            Serial.print("Torque");
-            Serial.print("$"); // NO NEW LINE?
+            Serial.print(0);// Torque reading
+            Serial.print("$"); // NO NEW LINE
             t1=t2;
   }
   } 
-
 float pushSpeed_TEST(float PWM){
   //actually push the speed
   return PWM*10;
