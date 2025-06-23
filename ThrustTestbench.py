@@ -5,6 +5,7 @@ import random
 import keyboard
 import threading
 import pyautogui
+import matplotlib
 import numpy as np
 import configparser
 import tkinter as tk
@@ -13,13 +14,12 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 from tkinter import scrolledtext
 from tkinter import simpledialog
-import matplotlib
-matplotlib.use("TkAgg")  # Set the backend before importing Figure
 from matplotlib.figure import Figure
 from serial_sniffer import serial_ports
 from serial_communicator import Serial_Communications
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
+#Display Debug Messages
+matplotlib.use("TkAgg")  
 sp = serial_ports()
 print(sp)
 currentDIR = os.getcwd()
@@ -34,9 +34,6 @@ gif_frames = []
 gif_index = 0
 gif_animation = None
 image_label = None
-speed = 0
-Thrust_value = 0
-settings = [1, 0, 10, 0.2]
 test_name = ""
 data = ""
 graph_x = 'time'  # Default X-axis
@@ -224,7 +221,7 @@ def start_clicked():
             start.itemconfig(startB, outline=green)
 
 def define_test_clicked():
-    global settings
+    global settings,test_name
     # Create a new window
     settings_window = tk.Toplevel(root)
     settings_window.title("PWM Settings")
@@ -287,6 +284,8 @@ def define_test_clicked():
         # Print them (you can use them as needed)
         print("Saved values:")
         print(f"Run Name: {test_name}")
+        Test_Name_Change(test_name)
+        
         print(settings)
         
         # Close the settings window
@@ -404,8 +403,6 @@ def test_loop():
     timestep = settings[3]
     pwm = pwm_start
     while pwm <= pwm_end and not kill:
-        print(pwm)
-        set_speed(pwm)
         Send(pwm)  # PWM signal Once
         time.sleep(timestep) 
         pwm += pwm_step     
@@ -452,11 +449,6 @@ def update_graph():
     # Redraw canvas
     fig1.draw_idle()
 
-def set_speed(value):
-    global speed
-    speed = value
-    #Label3.config(text=f"PWM Cycle = {speed}%")
-
 def set_autolog(value):
     global autolog
     autolog = value
@@ -468,10 +460,9 @@ def update_axes(x, y):
     update_graph()
 
 # Tkinter functions
-def Thrust_Title_Change(t):
-    global Thrust_value
-    Thrust_value = t
-    Label2.config(text=f'Thrust = {t}')
+def Test_Name_Change(test_name):
+    #global Label
+    Label1.config(text=f'Test Name:\n {test_name}')
 
 def change_color(feature, new_color):
     # Feature-specific button outline change
@@ -532,7 +523,7 @@ def save_readings(data):
         now = datetime.datetime.now()
         test_name = now.strftime("%y-%m-%d-%H-%M-%S")
 
-    filename = f"{currentDIR}\\runs\\Thrust-Test-{test_name}.csv"            
+    filename = f"{currentDIR}\\logged_runs\\Thrust-Test-{test_name}.csv"            
     with open(filename, "w") as file:
         file.write("SSTL Thrust Test Platform\n")
         file.write("time,pwm,current,rpm,thrust,torque\n")
@@ -553,7 +544,7 @@ def load_images():
     # Load static image
     try:
         static_img = Image.open(currentDIR+"\\assets\\sstlab.png")
-        static_img = static_img.resize((200, 200), Image.LANCZOS)
+        static_img = static_img.resize((300, 300), Image.LANCZOS)
         static_image = ImageTk.PhotoImage(static_img)
     except Exception as e:
         print(f"Error loading static image: {e}")
@@ -565,16 +556,15 @@ def load_images():
         gif_frames = []
         for i in range(gif.n_frames):
             gif.seek(i)
-            frame = gif.copy().resize((200, 200), Image.LANCZOS)
+            frame = gif.copy().resize((300, 300), Image.LANCZOS)
             gif_frames.append(ImageTk.PhotoImage(frame))
     except Exception as e:
         print(f"Error loading GIF: {e}")
         gif_frames = []
     
-    # Create image label if it doesn't exist
     if image_label is None:
         image_label = tk.Label(root, bg='#dddddd')
-        image_label.place(x=1010, y=200)  # Position in empty space
+        image_label.place(x=970, y=200)  # Position in empty space
     
     # Show static image initially
     if static_image:

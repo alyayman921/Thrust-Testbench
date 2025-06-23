@@ -18,8 +18,6 @@ Serial.begin(9600);
   pinMode(A0,INPUT); 
 }
 
-//  الموتور بيبدأ لوحده دايما ليه
-
 void loop() {
   // put your main code here, to run repeatedly:
   if (Serial.available() > 0){
@@ -42,6 +40,7 @@ void loop() {
         // end test, Can't write to motors
         digitalWrite(LED_BUILTIN,1); // Off
         Motor1.speed(0);
+        Serial.println("test end");
         Armed=0;// end test
       // if not a special character, send pwm value to motor
       }else{
@@ -58,7 +57,8 @@ void loop() {
   t2=millis();
   if(Armed && t2-t1>=50.0){// when the test starts, send the data at a rate of 20 hz
             //Readings from sensors
-            T=pushSpeed_TEST(PWM); // Test only
+            // PLEASE HELP 
+
             //time,pwm,current,rpm,thrust,torque$
             Serial.print((millis()-t0)/1000);
             Serial.print(',');
@@ -74,8 +74,5 @@ void loop() {
             Serial.print("$"); // NO NEW LINE
             t1=t2;
   }
-  } 
-float pushSpeed_TEST(float PWM){
-  //actually push the speed
-  return PWM*10;
-}
+} 
+
