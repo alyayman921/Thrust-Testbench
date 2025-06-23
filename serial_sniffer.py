@@ -1,10 +1,12 @@
 import sys
 import glob
 import serial
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
 def serial_ports():
     """ Lists serial port names
-
         :raises EnvironmentError:
             On unsupported or unknown platforms
         :returns:
