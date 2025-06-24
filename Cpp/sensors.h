@@ -22,10 +22,16 @@ public:
     scale.set_scale(calibration_factor); // Default scale
     scale.tare();                        // Reset the reading to 0
   }
+<<<<<<< Updated upstream
   void loadCellCalibrate_Zero() {
     // 2 seperate buttons on the gui to avoid putting a delay and running to
     // place the mass,
     // call this then call calibrate
+=======
+  void loadCellCalibrate_Zero(){ 
+    // 2 seperate buttons on the gui to avoid putting a delay and running to place the mass, 
+    //call this then call calibrate
+>>>>>>> Stashed changes
     scale.set_scale(); // Default units, raw data
     scale.tare();      // Reset the reading to 0
     Serial.println("Place Mass Please");
