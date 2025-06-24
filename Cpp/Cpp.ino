@@ -6,6 +6,7 @@ Motor Motor1(9);
 bool Armed=0; // 
 char received; 
 String command;
+int test_n=1;
 float PWM,T,t0,t1,t2;
 float pushSpeed_TEST(float PWM);
 
@@ -28,11 +29,17 @@ void loop() {
     //WHEN A NEW LINE BEGINS CHECK FOR SPECIAL CHARACTERS
       if(command=="c"){
         // Calibrate Motor
+        Serial.println("Calibration Start");
+        Serial.println("---------------------------");
         digitalWrite(LED_BUILTIN,0); 
         Motor1.calibrate();
         digitalWrite(LED_BUILTIN,1);
+        Serial.println("Calibration done");
+        Serial.println("---------------------------");
       }else if(command=="i"){
         // initiate test, Can write to motors
+        Serial.print("Test# ");Serial.print(test_n);Serial.println(" Started");
+        Serial.println("---------------------------");
         digitalWrite(LED_BUILTIN,0);
         Armed=1;
         t0=millis();
@@ -40,7 +47,10 @@ void loop() {
         // end test, Can't write to motors
         digitalWrite(LED_BUILTIN,1); // Off
         Motor1.speed(0);
-        Serial.println("test end");
+        PWM=0;
+        Serial.print("Test# ");Serial.print(test_n);Serial.println(" Ended");
+        Serial.println("---------------------------");
+        test_n++;
         Armed=0;// end test
       // if not a special character, send pwm value to motor
       }else{
@@ -58,7 +68,6 @@ void loop() {
   if(Armed && t2-t1>=50.0){// when the test starts, send the data at a rate of 20 hz
             //Readings from sensors
             // PLEASE HELP 
-
             //time,pwm,current,rpm,thrust,torque$
             Serial.print((millis()-t0)/1000);
             Serial.print(',');

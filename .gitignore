@@ -1,3 +1,6 @@
 __pycache__/
+.obsidian/
+.theia/
 *.csv
+*.zip
 render.m

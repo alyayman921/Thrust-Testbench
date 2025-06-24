@@ -1,5 +1,4 @@
 import os
-import math
 import time
 import random
 import keyboard
@@ -18,12 +17,14 @@ from matplotlib.figure import Figure
 from serial_sniffer import serial_ports
 from serial_communicator import Serial_Communications
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 #Display Debug Messages
 matplotlib.use("TkAgg")  
 sp = serial_ports()
 print(sp)
 currentDIR = os.getcwd()
 connected = False 
+expanded=False
 kill = False  
 autolog = True
 serial_thread = None
@@ -36,15 +37,15 @@ gif_animation = None
 image_label = None
 test_name = ""
 data = ""
-graph_x = 'time'  # Default X-axis
-graph_y = 'thrust'  # Default Y-axis
+graph_x = 'Time'  # Default X-axis
+graph_y = 'Thrust'  # Default Y-axis
 data_map = { # all data for a run
-    'time': [],
-    'pwm': [],
-    'current': [],
-    'rpm': [],
-    'thrust': [],
-    'torque': []
+    'Time': [],
+    'PWM': [],
+    'Current': [],
+    'RPM': [],
+    'Thrust': [],
+    'Torque': []
 }
 
 # Configuration file handling
@@ -61,7 +62,7 @@ def load_test_config():
             'pwm_step': '5',
             'pwm_start': '0',
             'pwm_end': '100',
-            'timestep': '2',
+            'Timestep': '2',
         }
         with open(TEST_CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
@@ -74,8 +75,8 @@ def load_data_config():
     else:
         # Create default config
         config['GRAPH'] = {
-            'x_axis': 'time',
-            'y_axis': 'thrust'
+            'x_axis': 'Time',
+            'y_axis': 'Thrust'
         }
         config['GENERAL'] = {
             'autolog': 'True'
@@ -90,7 +91,7 @@ def save_test_config():
         'pwm_step': str(settings[0]),
         'pwm_start': str(settings[1]),
         'pwm_end': str(settings[2]),
-        'timestep': str(settings[3]),
+        'Timestep': str(settings[3]),
     }
     with open(TEST_CONFIG_FILE, 'w') as configfile:
         config.write(configfile)
@@ -110,18 +111,19 @@ def save_data_config():
 # Load configuration at startup
 config_test = load_test_config()
 config_data = load_data_config()
-graph_x = config_data['GRAPH'].get('x_axis', 'time')
-graph_y = config_data['GRAPH'].get('y_axis', 'thrust')
+graph_x = config_data['GRAPH'].get('x_axis', 'Time')
+graph_y = config_data['GRAPH'].get('y_axis', 'Thrust')
 autolog = config_data['GENERAL'].getboolean('autolog', True)
 settings = [
     float(config_test['TEST'].get('pwm_step', '5')),
     float(config_test['TEST'].get('pwm_start', '0')),
     float(config_test['TEST'].get('pwm_end', '100')),
-    float(config_test['TEST'].get('timestep', '2'))
+    float(config_test['TEST'].get('Timestep', '2'))
 ]
 
 
 #Serial Communication
+#------------------------------------------------
 def Send(a):  # Send to Serial Port func
     global Serial
     Serial.send(f"{a}")
@@ -160,21 +162,25 @@ def SerialRefresh():
                     if len(values) == 6:  # We have all 6 values
                         try:
                             # Update data storage
-                            data_map['time'].append(float(values[0]))
-                            data_map['pwm'].append(float(values[1]))
-                            data_map['current'].append(float(values[2]))
-                            data_map['rpm'].append(float(values[3]))
-                            data_map['thrust'].append(float(values[4]))
-                            data_map['torque'].append(float(values[5]))
-                            
-                            # Update graph in real-time
+                            data_map['Time'].append(float(values[0]))
+                            data_map['PWM'].append(float(values[1]))
+                            data_map['Current'].append(float(values[2]))
+                            data_map['RPM'].append(float(values[3]))
+                            data_map['Thrust'].append(float(values[4]))
+                            data_map['Torque'].append(float(values[5]))
+                            # Update graph in real-Time
                             root.after(0, update_graph)
                         except ValueError:
-                            print("Could not convert data to float")
+                            print("Data Mismatch")
                 # Keep the last (incomplete) part
                 data = parts[-1]
+            else :
+                #data_map['Messages'].append(data)
+                SerialMonitorInsert(data)
+
 
 # Button Functions
+#------------------------------------------------
 def connect_clicked():
     global connected, serial_thread_running, Serial
     refreshSerialPorts()
@@ -186,7 +192,7 @@ def connect_clicked():
         Serial.close()
         serial_thread_running = False  # Signal thread to stop
         if serial_thread and serial_thread.is_alive():
-            serial_thread.join(timeout=1.0)  # Wait for thread to finish
+            serial_thread.join(Timeout=1.0)  # Wait for thread to finish
     else:
         connected = True
         try:
@@ -194,6 +200,7 @@ def connect_clicked():
             connect.itemconfig(toggle_text, text='COM Started')
             COM = SerialPorts.get()
             Serial = Serial_Communications(COM, 9600)
+            serial_read_start()
             fix_autostart()
         except Exception as e:
             print('Error While Opening Serial Port')
@@ -208,7 +215,6 @@ def start_clicked():
             testThread.start()
             start.itemconfig(toggle_text, text='Stop Test')
             start.itemconfig(startB, outline=red)
-            serial_read_start()
             if gif_frames:
                 if gif_animation:
                     root.after_cancel(gif_animation)
@@ -232,7 +238,7 @@ def define_test_clicked():
         'pwm_step': str(settings[0]),
         'pwm_start': str(settings[1]),
         'pwm_end': str(settings[2]),
-        'timestep': str(settings[3]),
+        'Timestep': str(settings[3]),
     }
     
     # Variables to store the entries
@@ -240,7 +246,7 @@ def define_test_clicked():
     pwm_step_var = tk.StringVar(value=default_values["pwm_step"])
     pwm_start_var = tk.StringVar(value=default_values["pwm_start"])
     pwm_end_var = tk.StringVar(value=default_values["pwm_end"])
-    timestep_var = tk.StringVar(value=default_values["timestep"])
+    Timestep_var = tk.StringVar(value=default_values["Timestep"])
 
     # Create and layout widgets
     label_frame = ttk.Frame(settings_window, padding="10")
@@ -268,8 +274,8 @@ def define_test_clicked():
     
     # Timestep
     ttk.Label(label_frame, text="Timestep:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
-    timestep_entry = ttk.Entry(label_frame, textvariable=timestep_var)
-    timestep_entry.grid(row=4, column=1, sticky=tk.EW, padx=5, pady=5)
+    Timestep_entry = ttk.Entry(label_frame, textvariable=Timestep_var)
+    Timestep_entry.grid(row=4, column=1, sticky=tk.EW, padx=5, pady=5)
     
     # Save button functionality
     def save_and_close():
@@ -279,8 +285,8 @@ def define_test_clicked():
         pwm_step = float(pwm_step_var.get())
         pwm_start = float(pwm_start_var.get())
         pwm_end = float(pwm_end_var.get())
-        timestep = float(timestep_var.get())
-        settings = [pwm_step, pwm_start, pwm_end, timestep]
+        Timestep = float(Timestep_var.get())
+        settings = [pwm_step, pwm_start, pwm_end, Timestep]
         # Print them (you can use them as needed)
         print("Saved values:")
         print(f"Run Name: {test_name}")
@@ -329,7 +335,7 @@ def data_config_clicked():
     x_combo = ttk.Combobox(
         graph_frame, 
         textvariable=x_var,
-        values=['time', 'pwm', 'current', 'rpm', 'thrust', 'torque'],
+        values=['Time', 'PWM', 'Current', 'RPM', 'Thrust', 'Torque'],
         state="readonly"
     )
     x_combo.grid(row=0, column=1, padx=5, pady=5)
@@ -340,7 +346,7 @@ def data_config_clicked():
     y_combo = ttk.Combobox(
         graph_frame, 
         textvariable=y_var,
-        values=['time', 'pwm', 'current', 'rpm', 'thrust', 'torque'],
+        values=['Time', 'PWM', 'Current', 'RPM', 'Thrust', 'Torque'],
         state="readonly"
     )
     y_combo.grid(row=1, column=1, padx=5, pady=5)
@@ -382,32 +388,49 @@ def calibrate_clicked():
     Calibrate.itemconfig(toggle_text, text="Calibrated")
     Calibrate.itemconfig(calibrateB, outline=green)
 
-# Runtime Functions
+def SerialMonitor(): # Serioal monitor tkinter button
+    global expanded
+    if expanded:
+        expanded=False
+        root.geometry("1280x720")
+        root.after(0, root.update)
+    else:
+        expanded=True
+        root.geometry("1280x905")
+        root.after(0, root.update)
+        #serialThread=threading.Thread(target=SerialMonitorRefresh).start()
+
+
+# RunTime Functions
+#------------------------------------------------
+def SerialMonitorInsert(readings): # Refresh Serial monitor
+    serial_monitor.insert(tk.END, readings+'\n')
+    serial_monitor.see(tk.END)
+
+
 def fix_autostart():
     Send("i")
     Send("0")
     Send("e")
 
 def test_loop():
-    global kill, settings, t0, data, autolog
+    global kill, settings, data, autolog
     # Reset data storage at start of test
     for key in data_map:
         data_map[key] = []
-    
-    t0 = time.time()  # Reset time reference when test starts
     Send('i')  # INIT TEST START
     start.itemconfig(toggle_text, text='Testing')
     pwm_step = settings[0]
     pwm_start = settings[1]
     pwm_end = settings[2]
-    timestep = settings[3]
-    pwm = pwm_start
-    while pwm <= pwm_end and not kill:
-        Send(pwm)  # PWM signal Once
-        time.sleep(timestep) 
-        pwm += pwm_step     
+    Timestep = settings[3]
+    PWM = pwm_start
+    while PWM <= pwm_end and not kill:
+        Send(PWM)  # PWM signal Once
+        time.sleep(Timestep) 
+        PWM += pwm_step     
     Send('e')  # End Test
-    time.sleep(0.2)
+    #time.sleep(0.2)
     if autolog:
         logger_clicked()
     if gif_animation:
@@ -436,8 +459,6 @@ def update_graph():
     # Only plot if we have data
     if x_data and y_data:
         axis.plot(x_data, y_data, 'b-')
-        #axis.set_xlabel(graph_x)
-        #axis.set_ylabel(graph_y)
         axis.set_title(f"{graph_y} vs {graph_x}")
     
     # Set grid and background
@@ -459,7 +480,9 @@ def update_axes(x, y):
     graph_y = y
     update_graph()
 
+
 # Tkinter functions
+#------------------------------------------------
 def Test_Name_Change(test_name):
     #global Label
     Label1.config(text=f'Test Name:\n {test_name}')
@@ -470,8 +493,8 @@ def change_color(feature, new_color):
         feature.itemconfig(connectB, outline=new_color)
     elif feature == start:
         feature.itemconfig(startB, outline=new_color)
-    elif feature == manimG:
-        feature.itemconfig(manimB, outline=new_color)
+    elif feature == smB:
+        feature.itemconfig(sm_button, outline=new_color)
     elif feature == logger:
         feature.itemconfig(loggerB, outline=new_color)
     elif feature == test:
@@ -500,21 +523,27 @@ def on_mouse_move(event):
     lastx = event.widget.winfo_pointerx()
     lasty = event.widget.winfo_pointery()
 
+
 # Saving Data
+#------------------------------------------------
 def logger_clicked():
     global data, data_map
     Output_Data = ""
-    # Use data from our structured storage
-    for i in range(len(data_map['time'])):
-        Output_Data += (
-            f"{data_map['time'][i]},"
-            f"{data_map['pwm'][i]},"
-            f"{data_map['current'][i]},"
-            f"{data_map['rpm'][i]},"
-            f"{data_map['thrust'][i]},"
-            f"{data_map['torque'][i]}\n"
-        )
-    save_readings(Output_Data)
+    try:
+        for i in range(len(data_map['Time'])):
+            Output_Data += (
+                f"{data_map['Time'][i]},"
+                f"{data_map['PWM'][i]},"
+                f"{data_map['Current'][i]},"
+                f"{data_map['RPM'][i]},"
+                f"{data_map['Thrust'][i]},"
+                f"{data_map['Torque'][i]}\n"
+            )
+        save_readings(Output_Data)
+        pass
+    except Exception as e:
+        print("Culdnt save")
+        x=0
 
 def save_readings(data):
     global test_name, kill,currentDIR
@@ -526,17 +555,17 @@ def save_readings(data):
     filename = f"{currentDIR}\\logged_runs\\Thrust-Test-{test_name}.csv"            
     with open(filename, "w") as file:
         file.write("SSTL Thrust Test Platform\n")
-        file.write("time,pwm,current,rpm,thrust,torque\n")
+        file.write("Time,PWM,Current,RPM,Thrust,Torque\n")
         file.write(f"{data}")
     print(f"File '{filename}' created and values written successfully.")
 
 def graph_manim():
     ## Change button color
     manimG.itemconfig(toggle_text, text='Graphing')
-    manimG.itemconfig(manimB, outline=green)
+    manimG.itemconfig(manimB, outline=red)
     # do something here
-    arm.itemconfig(toggle_text, text='Exported')
-    arm.itemconfig(armB, outline=red)
+    manimG.itemconfig(toggle_text, text='Exported')
+    manimG.itemconfig(armB, outline=green)
 
 def load_images():
     global static_image, gif_frames, image_label
@@ -576,9 +605,12 @@ def animate_gif():
         image_label.config(image=gif_frames[gif_index])
         gif_index = (gif_index + 1) % len(gif_frames)
         gif_animation = root.after(100, animate_gif)  # Adjust speed as needed
+
+
 #Debugging and keyboard shortcuts
+#------------------------------------------------
 def debug_shortcuts(event):
-    global t0, armed, kill
+    global armed, kill
     readings = ""
     i = 0
     # Define actions based on the key pressed
@@ -592,6 +624,7 @@ def detect_key_press():
 
 #detect_key_press()
 # GUI WINDOW
+
 normal_color = "#5b3065"  # border
 hover_color = "#ba5da3"
 press_color = "#fffaaa"
@@ -676,49 +709,13 @@ startB = start.create_polygon(
 
 toggle_text = start.create_text((160*0.75, 40*0.75), text="Start Test", font="Play 12 bold", fill="white")
 start.place(x=1025, y=620)
-if connected:
-    start.bind("<Enter>", lambda event: change_color(start, hover_color))
-else:
-    start.bind("<Enter>", lambda event: move_cursor())
+#if not connected:
+#start.bind("<Enter>", lambda event: move_cursor())
+#else:
+start.bind("<Enter>", lambda event: change_color(start, hover_color))
 start.bind("<Leave>", lambda event: change_color(start, normal_color))
 start.bind("<Button-1>", lambda event: change_color(start, press_color))
 start.bind("<ButtonRelease-1>", lambda event: start_clicked())
-
-# Animate Graph button
-manimG = Canvas(root, width=320*0.75, height=75*0.75, bg="#dddddd", borderwidth=0, highlightthickness=0)
-p1 = (10*0.75, 10*0.75)
-p2 = (10*0.75, 35*0.75)
-p3 = (15*0.75, 45*0.75)
-p4 = (15*0.75, 70*0.75)
-p5 = (310*0.75, 70*0.75)
-p6 = (310*0.75, 25*0.75)
-p7 = (295*0.75, 10*0.75)
-manimB = manimG.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=normal_color, width=3,
-    fill=fill_color
-)
-toggle_text = manimG.create_text((160*0.75, 40*0.75), text="Animate Graph", font="Play 12 bold", fill="white")
-manimG.place(x=280, y=620)
-manimG.bind("<Button-1>", lambda event: change_color(manimG, press_color))
-manimG.bind("<ButtonRelease-1>", lambda event: graph_manim())
-manimG.bind("<Enter>", lambda event: change_color(manimG, hover_color))
-manimG.bind("<Leave>", lambda event: change_color(manimG, normal_color))
-
-# Data Configuration button (replaces Logger)
-logger = Canvas(root, width=320*0.75, height=75*0.75, bg="#dddddd", borderwidth=0, highlightthickness=0)
-loggerB = logger.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=normal_color, width=2,
-    fill=fill_color
-)
-logger.create_text((160*0.75, 40*0.75), text="Data Config", font="Play 12 bold", fill="white")
-logger.place(x=530, y=620)
-logger.bind("<Enter>", lambda event: change_color(logger, hover_color))
-logger.bind("<Leave>", lambda event: change_color(logger, normal_color))
-logger.bind("<Button-1>", lambda event: change_color(logger, press_color))
-logger.bind("<ButtonRelease-1>", lambda event: data_config_clicked())
-
 # Define Test button
 test = Canvas(root, width=320*0.75, height=75*0.75, bg="#dddddd", borderwidth=0, highlightthickness=0)
 p1 = (10*0.75, 10*0.75)
@@ -736,6 +733,21 @@ testB = test.create_polygon(
 toggle_text = test.create_text((160*0.75, 40*0.75), text="Define Test", font="Play 12 bold", fill="white")
 test.place(x=775, y=620)
 
+# Data Configuration button
+logger = Canvas(root, width=320*0.75, height=75*0.75, bg="#dddddd", borderwidth=0, highlightthickness=0)
+loggerB = logger.create_polygon(
+    p1, p2, p3, p4, p5, p6, p7,
+    outline=normal_color, width=2,
+    fill=fill_color
+)
+logger.create_text((160*0.75, 40*0.75), text="Data Config", font="Play 12 bold", fill="white")
+logger.place(x=530, y=620)
+logger.bind("<Enter>", lambda event: change_color(logger, hover_color))
+logger.bind("<Leave>", lambda event: change_color(logger, normal_color))
+logger.bind("<Button-1>", lambda event: change_color(logger, press_color))
+logger.bind("<ButtonRelease-1>", lambda event: data_config_clicked())
+
+
 test.bind("<Enter>", lambda event: change_color(test, hover_color))
 test.bind("<Leave>", lambda event: change_color(test, normal_color))
 test.bind("<Button-1>", lambda event: change_color(test, press_color))
@@ -749,23 +761,37 @@ calibrateB = Calibrate.create_polygon(
     fill=fill_color
 )
 Calibrate.create_text((160*0.75, 40*0.75), text="Calibrate", font="Play 12 bold", fill="white")
-Calibrate.place(x=30, y=620)
+Calibrate.place(x=280, y=620)
 Calibrate.bind("<Button-1>", lambda event: change_color(Calibrate, press_color))
-Calibrate.bind("<ButtonRelease-1>", lambda event: calibrate_clicked())
+Calibrate.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=calibrate_clicked).start())
 
-# Serial monitor
-serial_frame = Frame(width=1280, height=180)
+
+# Serial monitor window
+sm_button = Canvas(root,width=320*0.75,height=75*0.75, bg="#dddddd",borderwidth=0,highlightthickness=0) #button
+smB = sm_button.create_polygon(
+p1,p2,p3,p4,p5,p6,p7,
+outline=normal_color, width=2,
+fill=fill_color
+)
+sm_button.create_text((160*0.75,40*0.75), text="Serial Monitor", font="Play 12 bold",fill="white")
+sm_button.place(x=30,y=620)
+sm_button.bind("<Enter>", lambda event: change_color(sm_button,hover_color))
+sm_button.bind("<Leave>", lambda event: change_color(sm_button,normal_color))
+sm_button.bind("<Button-1>", lambda event: change_color(sm_button,press_color))
+sm_button.bind("<ButtonRelease-1>", lambda event: SerialMonitor())
+
+serial_frame=Frame(width=1280,height=180)
 serial_frame.place(y=720)
-serial_monitor = scrolledtext.ScrolledText(
-    serial_frame, 
-    width=114,  
-    height=7,  
-    font=("Arial", 15)
-) 
+
+serial_monitor = scrolledtext.ScrolledText(serial_frame, 
+                            width = 114,  
+                            height = 7,  
+                            font = ("Arial", 
+                                    15)) 
 serial_monitor.pack(padx=4)
-serial_sender = tk.Entry(root, width=1280)
+serial_sender=tk.Entry(root,width=1280)
 serial_sender.pack(side='bottom')
-serial_sender.bind('<Return>', Send_text)
+serial_sender.bind('<Return>',Send_text)
 
 load_images()
 root.mainloop()
