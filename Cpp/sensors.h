@@ -13,7 +13,9 @@ public:
     this->DOUT = DOUT;
     this->CLK = CLK;
   }
-  void connect() { scale.begin(DOUT, CLK); }
+  void connect() {
+    scale.begin(DOUT, CLK);
+    }
   float thrustReading() {
     weight = scale.get_units(10); // Does this produce a delay?
     return weight;
@@ -22,16 +24,12 @@ public:
     scale.set_scale(calibration_factor); // Default scale
     scale.tare();                        // Reset the reading to 0
   }
-  void loadCellCalibrate_Zero(){ 
-    // 2 seperate buttons on the gui to avoid putting a delay and running to place the mass, 
-    //call this then call calibrate
-    scale.set_scale(); // Default units, raw data
-    scale.tare();      // Reset the reading to 0
-    Serial.println("Place Mass Please");
+  void loadCellCalibrate_Zero() {
+    scale.set_scale(); // Default scale
+    scale.tare(); // Reset the reading to 0
+  Serial.println("Place Mass Please");
   }
-
-  void loadCellCalibrate(float known_mass) {
-    weight = scale.get_units(10); // Average of 10 readings
+  void loadCellCalibrate(float known_mass){ // Average of 10 readings
     calibration_factor = weight / (known_mass * 9.81);
     scale.set_scale(calibration_factor);
     Serial.println("Loadcell Calibration Done");
@@ -41,7 +39,7 @@ class infraredSensor {
 public:
   int pin;
   int rpm;
-  unsigned long prevmicros = 0;
+signed long prevmicros = 0;
   unsigned long duration;
   boolean currentstate;
   boolean prevstate = 0;
