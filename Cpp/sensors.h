@@ -22,16 +22,9 @@ public:
     scale.set_scale(calibration_factor); // Default scale
     scale.tare();                        // Reset the reading to 0
   }
-<<<<<<< Updated upstream
-  void loadCellCalibrate_Zero() {
-    // 2 seperate buttons on the gui to avoid putting a delay and running to
-    // place the mass,
-    // call this then call calibrate
-=======
   void loadCellCalibrate_Zero(){ 
     // 2 seperate buttons on the gui to avoid putting a delay and running to place the mass, 
     //call this then call calibrate
->>>>>>> Stashed changes
     scale.set_scale(); // Default units, raw data
     scale.tare();      // Reset the reading to 0
     Serial.println("Place Mass Please");
@@ -41,7 +34,7 @@ public:
     weight = scale.get_units(10); // Average of 10 readings
     calibration_factor = weight / (known_mass * 9.81);
     scale.set_scale(calibration_factor);
-    Serial.println("Calibration Done");
+    Serial.println("Loadcell Calibration Done");
   }
 };
 class infraredSensor {

@@ -39,16 +39,13 @@ void loop() {
       // Calibrate Motor
       if(command=="c"){
         Serial.println("ESC Calibration Start");
-        Serial.println("---------------------------");
         digitalWrite(LED_BUILTIN,0); 
         Motor1.calibrate();
         digitalWrite(LED_BUILTIN,1);
         Serial.println("ESC Calibration done");
-        Serial.println("---------------------------");
       }else if(command=="i"){
         // initiate test, Can write to motors
         Serial.print("Test# ");Serial.print(test_n);Serial.print(" Started\n");
-        Serial.println("---------------------------");
         digitalWrite(LED_BUILTIN,0);
         Armed=1;
         t0=millis();
@@ -58,7 +55,6 @@ void loop() {
         Motor1.speed(0);
         PWM=0;
         Serial.print("Test# ");Serial.print(test_n);Serial.print(" Ended\n");
-        Serial.println("---------------------------");
         test_n++;
         Armed=0;// end test
 
