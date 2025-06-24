@@ -28,8 +28,6 @@ To set up the Thrust Testbench software, follow these steps:
     cd ThrustTestbench
     ```
 
-    *(Replace `<repository_url>` with the actual URL of your repository.)*
-
 2.  **Install dependencies:**
 
     Run Dependencies batch file or you can install them manually using pip:
