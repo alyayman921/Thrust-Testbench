@@ -15,26 +15,9 @@ This repository contains the software for a Thrust Testbench, designed to contro
 *   **Serial Port Sniffer:** Automatically detects available serial ports.
 *   **Calibration:** Provides a calibration function for the ESC.
 *   **User-friendly GUI:** Built with Tkinter for an intuitive user experience.
-
-
-
-
-## Project Structure
-
-*   `ThrustTestbench.py`: The main application file, containing the Tkinter GUI, test logic, data handling, and integration with serial communication.
-*   `serial_communicator.py`: A Python class for handling serial port communication (sending and reading data).
-*   `serial_sniffer.py`: A utility script to detect and list available serial ports on the system.
-*   `config_data.ini`: Configuration file for data logging and graphing settings (e.g., default X/Y axis for plots, autologging).
-*   `config_test.ini`: Configuration file for defining test parameters (e.g., PWM step, start, end, timestep).
-*   `.gitignore`: Specifies intentionally untracked files that Git should ignore.
-*   `README.md`: This README file.
-
-
-
-
 ## Installation
 
-[Download Latest Release]()
+[Download Latest Release](https://github.com/alyayman921/Thrust-Testbench/releases)
 ### Or
 To set up the Thrust Testbench software, follow these steps:
 
@@ -93,7 +76,7 @@ To set up the Thrust Testbench software, follow these steps:
 
     *   Once connected and test parameters are defined, click the 'Start Test' button to begin the test sequence.
     *   The GUI will display real-time data on the graph.
-    *   To stop an ongoing test, click the 'Stop Test' button, or press space
+    *   To stop an ongoing test, click the 'Stop Test' button, or press space.
 
 5.  **Data Configuration:**
 
@@ -104,4 +87,14 @@ To set up the Thrust Testbench software, follow these steps:
 6.  **Serial Monitor:**
 
     *   Click the 'Serial Monitor' button to expand/collapse a console window that displays raw serial communication data. You can also send commands directly via the input field at the bottom of this monitor.
+    * Sending 'c' Character to Serial port starts calibration of the esc.
+    * Sending 'i' makes you arm the motor and start a test.
+    * Sending any number after a test starts from 0 to 100 is equivalent to sending PWM signal to motor from 1000 to 2000.
+    * Sending 'e' is stop and disarm the motor, and ends the test, Note that for a manual test the Program will not store data to csv file
+## Project Structure
 
+*   `ThrustTestbench.py`: The main application file, containing the Tkinter GUI, test logic, data handling, and integration with serial communication.
+*   `serial_communicator.py`: A Python class for handling serial port communication (sending and reading data).
+*   `serial_sniffer.py`: A utility script to detect and list available serial ports on the system.
+*   `config_data.ini`: Configuration file for data logging and graphing settings (e.g., default X/Y axis for plots, autologging).
+*   `config_test.ini`: Configuration file for defining test parameters (e.g., PWM step, start, end, timestep).
