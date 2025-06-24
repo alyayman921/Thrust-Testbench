@@ -1,20 +1,28 @@
-#include "esc.h"
 #include <time.h>
 #include <string.h>
-Motor Motor1(9);
+#include "esc.h"
+#include "sensors.h"
 
-bool Armed=0; // 
-char received; 
-String command;
-int test_n=1;
-float PWM,T,t0,t1,t2;
-float pushSpeed_TEST(float PWM);
+Motor Motor1(9);
+loadCell ThrustCell1(3,4);
+currentSensor CS1(A0);
+infraredSensor IR1(5);
+
+bool Armed=0; 
+char received; String command;
+int test_n=1; float PWM,T,Torque,Current,RPM,t0,t1,t2;
+void SendtoDataAquisition(float freq);
 
 void setup() {
-  // put your setup code here, to run once:
-Motor1.connect();
-Motor1.speed(0);
-Serial.begin(9600);
+  Serial.begin(9600);
+  Motor1.connect();
+  Motor1.speed(0);
+
+  ThrustCell1.connect();
+  //ThrustCell1.loadCell_Zero(); // this is an infinite loop while no sensor is attached
+
+  CS1.connect();
+  IR1.connect();
   pinMode(LED_BUILTIN,OUTPUT);
   pinMode(A0,INPUT); 
 }
@@ -26,19 +34,21 @@ void loop() {
     if(received!='\n'){ // if the message is not empty
     command+=received;
     }else{ 
-    //WHEN A NEW LINE BEGINS CHECK FOR SPECIAL CHARACTERS
+    //WHEN A NEW LINE BEGINS CHECK FOR SPECIAL Strings
+      // Motor Strings
+      //--------------------------------
+      // Calibrate Motor
       if(command=="c"){
-        // Calibrate Motor
-        Serial.println("Calibration Start");
+        Serial.println("ESC Calibration Start");
         Serial.println("---------------------------");
         digitalWrite(LED_BUILTIN,0); 
         Motor1.calibrate();
         digitalWrite(LED_BUILTIN,1);
-        Serial.println("Calibration done");
+        Serial.println("ESC Calibration done");
         Serial.println("---------------------------");
       }else if(command=="i"){
         // initiate test, Can write to motors
-        Serial.print("Test# ");Serial.print(test_n);Serial.println(" Started");
+        Serial.print("Test# ");Serial.print(test_n);Serial.print(" Started\n");
         Serial.println("---------------------------");
         digitalWrite(LED_BUILTIN,0);
         Armed=1;
@@ -48,12 +58,19 @@ void loop() {
         digitalWrite(LED_BUILTIN,1); // Off
         Motor1.speed(0);
         PWM=0;
-        Serial.print("Test# ");Serial.print(test_n);Serial.println(" Ended");
+        Serial.print("Test# ");Serial.print(test_n);Serial.print(" Ended\n");
         Serial.println("---------------------------");
         test_n++;
         Armed=0;// end test
-      // if not a special character, send pwm value to motor
+      // Loadcell calibration strings
+      //--------------------------------
+      }else if(command=="cz1"){     // zero before calibration
+        ThrustCell1.loadCellCalibrate_Zero();
+      }else if(command.startsWith("cl1")){      // calibrate after placing known mass
+        float known_mass=command.substring(3).toFloat();
+        ThrustCell1.loadCellCalibrate(known_mass);
       }else{
+        // if not a special string,it must be motor speed->send pwm value to motor and get readings
         PWM=command.toFloat();
           if(PWM<=100.0&&Armed)
           {
@@ -65,23 +82,35 @@ void loop() {
     }
   }
   t2=millis();
-  if(Armed && t2-t1>=50.0){// when the test starts, send the data at a rate of 20 hz
+  SendtoDataAquisition(20); // 20 Hz
+} 
+
+void SendtoDataAquisition(float freq){ // Send to data Aquisition
+  if(Armed && (t2-t1)/1000 >= (1.0/freq) ){// when the test starts, send the data at a rate of idk hz
+
+            //we need to get the readings within 1/freq seconds so we send updated version for the required frequency
+            //we can't use delays, code can never sleep (Dangerous while having to stop a motor)
+            
             //Readings from sensors
-            // PLEASE HELP 
+            //Current=CS1.currentReading(); // fix this delay please
+            RPM=IR1.rpmReading();
+            //T=ThrustCell1.thrustReading(); // infinite loop while disconnected
+            //Torque=??
+
+
             //time,pwm,current,rpm,thrust,torque$
-            Serial.print((millis()-t0)/1000);
-            Serial.print(',');
-            Serial.print(PWM);
-            Serial.print(',');
-            Serial.print(0); // Current A reading
-            Serial.print(',');
-            Serial.print(0); // RPM reading
-            Serial.print(',');
-            Serial.print(T);// Thrust reading
-            Serial.print(',');
-            Serial.print(0);// Torque reading
+            //Time at this reading
+            Serial.print((millis()-t0)/1000);Serial.print(',');
+            Serial.print(PWM);Serial.print(',');
+            // Current Ampere reading
+            Serial.print(Current); Serial.print(',');
+            // RPM reading
+            Serial.print(RPM); Serial.print(',');
+            // Thrust reading
+            Serial.print(T);Serial.print(',');
+            // Torque reading
+            Serial.print(Torque);
             Serial.print("$"); // NO NEW LINE
             t1=t2;
   }
-} 
-
+}

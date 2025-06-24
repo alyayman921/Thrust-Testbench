@@ -177,6 +177,7 @@ def SerialRefresh():
             else :
                 #data_map['Messages'].append(data)
                 SerialMonitorInsert(data)
+                print(data)
 
 
 # Button Functions
@@ -187,7 +188,7 @@ def connect_clicked():
     if connected:
         print('stopped')
         Send('e')
-        connect.itemconfig(toggle_text, text='COM Stopped')
+        connect.itemconfig(toggle_text, text='Disconnected')
         connected = False
         Serial.close()
         serial_thread_running = False  # Signal thread to stop
@@ -197,7 +198,7 @@ def connect_clicked():
         connected = True
         try:
             print('started')
-            connect.itemconfig(toggle_text, text='COM Started')
+            connect.itemconfig(toggle_text, text='Connected')
             COM = SerialPorts.get()
             Serial = Serial_Communications(COM, 9600)
             serial_read_start()
