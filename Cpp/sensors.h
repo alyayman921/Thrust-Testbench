@@ -22,7 +22,6 @@ public:
     scale.set_scale(calibration_factor); // Default scale
     scale.tare();                        // Reset the reading to 0
   }
-
   void loadCellCalibrate_Zero() {
     // 2 seperate buttons on the gui to avoid putting a delay and running to
     // place the mass,
@@ -39,7 +38,6 @@ public:
     Serial.println("Calibration Done");
   }
 };
-
 class infraredSensor {
 public:
   int pin;
@@ -52,7 +50,6 @@ public:
   infraredSensor(int pin) { this->pin = pin; }
 
   void connect() { pinMode(pin, INPUT); };
-
   float rpmReading() {
     currentstate = digitalRead(pin);
     if (prevstate != currentstate) {
