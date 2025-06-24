@@ -17,7 +17,6 @@ void setup() {
   Serial.begin(9600);
   Motor1.connect();
   Motor1.speed(0);
-
   ThrustCell1.connect();
   //ThrustCell1.loadCell_Zero(); // this is an infinite loop while no sensor is attached
 
@@ -62,6 +61,7 @@ void loop() {
         Serial.println("---------------------------");
         test_n++;
         Armed=0;// end test
+
       // Loadcell calibration strings
       //--------------------------------
       }else if(command=="cz1"){     // zero before calibration
@@ -88,16 +88,15 @@ void loop() {
 void SendtoDataAquisition(float freq){ // Send to data Aquisition
   if(Armed && (t2-t1)/1000 >= (1.0/freq) ){// when the test starts, send the data at a rate of idk hz
 
-            //we need to get the readings within 1/freq seconds so we send updated version for the required frequency
-            //we can't use delays, code can never sleep (Dangerous while having to stop a motor)
+            // we need to get the readings within 1/freq seconds so we send updated version for the required frequency
+            // we can't use delays, code can never sleep (Dangerous while having to stop a motor)
             
             //Readings from sensors
             //Current=CS1.currentReading(); // fix this delay please
             RPM=IR1.rpmReading();
             //T=ThrustCell1.thrustReading(); // infinite loop while disconnected
             //Torque=??
-
-
+            
             //time,pwm,current,rpm,thrust,torque$
             //Time at this reading
             Serial.print((millis()-t0)/1000);Serial.print(',');

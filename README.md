@@ -47,7 +47,6 @@ To set up the Thrust Testbench software, follow these steps:
     python ThrustTestbench.py
     ```
 
-    This will open the GUI window.
 # Usage
 1.  **Connect to Serial Port:**
 
@@ -68,7 +67,7 @@ To set up the Thrust Testbench software, follow these steps:
 
 3.  **Calibrate (if necessary):**
 
-    *   If your ESC requires calibration, click the 'Calibrate' button.
+    *   If your ESC or the Loadcell require calibration, click the 'Calibrate' button and follow instructions shown.
 
 4.  **Start and Stop Test:**
 

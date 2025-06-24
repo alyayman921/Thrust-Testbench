@@ -149,7 +149,7 @@ def SerialRefresh():
     global Serial, data, serial_thread_running, data_map
     while serial_thread_running:
         readings = Serial.read()
-        if readings != "" and readings != '\n':
+        if readings != "" and readings != '\n' and readings!=None:
             data += readings
             # Check if we have a complete reading
             if '$' in data:
@@ -179,7 +179,6 @@ def SerialRefresh():
                 SerialMonitorInsert(data)
                 print(data)
 
-
 # Button Functions
 #------------------------------------------------
 def connect_clicked():
@@ -193,7 +192,7 @@ def connect_clicked():
         Serial.close()
         serial_thread_running = False  # Signal thread to stop
         if serial_thread and serial_thread.is_alive():
-            serial_thread.join(Timeout=1.0)  # Wait for thread to finish
+            serial_thread.join()  # Wait for thread to finish
     else:
         connected = True
         try:
@@ -508,7 +507,7 @@ def on_mouse_down(event):
     lastx = event.widget.winfo_pointerx()
     lasty = event.widget.winfo_pointery()
 
-def move_cursor():
+def move_cursor_randomly():
     global connected
     if not connected:
         direction = [-1, 1]
@@ -553,7 +552,14 @@ def save_readings(data):
         now = datetime.datetime.now()
         test_name = now.strftime("%y-%m-%d-%H-%M-%S")
 
-    filename = f"{currentDIR}\\logged_runs\\Thrust-Test-{test_name}.csv"            
+    folder_name=currentDIR+'\\logged_runs'
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+        print(f"Created folder: {folder_name}")
+    else:
+        print(f"Folder already exists: {folder_name}")
+    filename = f"{folder_name}\\Thrust-Test-{test_name}.csv"  
+
     with open(filename, "w") as file:
         file.write("SSTL Thrust Test Platform\n")
         file.write("Time,PWM,Current,RPM,Thrust,Torque\n")
@@ -622,8 +628,8 @@ def debug_shortcuts(event):
 def detect_key_press():
     # Hook the key press event to the debug_shortcuts function
     keyboard.on_press(debug_shortcuts)
+detect_key_press()
 
-#detect_key_press()
 # GUI WINDOW
 
 normal_color = "#5b3065"  # border
@@ -710,9 +716,6 @@ startB = start.create_polygon(
 
 toggle_text = start.create_text((160*0.75, 40*0.75), text="Start Test", font="Play 12 bold", fill="white")
 start.place(x=1025, y=620)
-#if not connected:
-#start.bind("<Enter>", lambda event: move_cursor())
-#else:
 start.bind("<Enter>", lambda event: change_color(start, hover_color))
 start.bind("<Leave>", lambda event: change_color(start, normal_color))
 start.bind("<Button-1>", lambda event: change_color(start, press_color))

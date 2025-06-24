@@ -1,7 +1,7 @@
 __pycache__/
 .obsidian/
-.theia/
+logged_runs/*
+Cpp/.theia/
 build.bat
-*.csv
 *.zip
 render.m
