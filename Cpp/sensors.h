@@ -4,9 +4,7 @@ class loadCell {
 public:
   HX711 scale;
   int DOUT;
-  int CLK;
-  float calibration_factor = -7050; // is this optimal? does this change at max
-                                    // thrust vs other values of thrust?
+  int CLK; 
   float weight;
   // Constructor
   loadCell(int DOUT, int CLK) {
@@ -21,18 +19,8 @@ public:
     return weight;
   }
   void loadCell_Zero() {
-    scale.set_scale(calibration_factor); // Default scale
-    scale.tare();                        // Reset the reading to 0
-  }
-  void loadCellCalibrate_Zero() {
-    scale.set_scale(); // Default scale
+    scale.set_scale(); // Raw data scale
     scale.tare(); // Reset the reading to 0
-  Serial.println("Place Mass Please");
-  }
-  void loadCellCalibrate(float known_mass){ // Average of 10 readings
-    calibration_factor = weight / (known_mass * 9.81);
-    scale.set_scale(calibration_factor);
-    Serial.println("Loadcell Calibration Done");
   }
 };
 class infraredSensor {

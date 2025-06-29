@@ -24,13 +24,17 @@ sp = serial_ports()
 print(sp)
 currentDIR = os.getcwd()
 connected = False
-expanded=False
+expanded=True
 kill = False
 autolog = True
 serial_thread = None
 serial_thread_running = False
 calibrate_state = False  # Did you calibrate the esc
 static_image = None
+PWM=0
+cf1=0
+cf2=0
+cf3=0
 gif_frames = []
 gif_index = 0
 gif_animation = None
@@ -51,6 +55,7 @@ data_map = { # all data for a run
 # Configuration file handling
 TEST_CONFIG_FILE = "config_test.ini"
 DATA_CONFIG_FILE = "config_data.ini"
+LOADCELLS_CONFIG_FILE = "config_loadcells.ini"
 def load_test_config():
     config = configparser.ConfigParser()
     if os.path.exists(TEST_CONFIG_FILE):
@@ -84,6 +89,21 @@ def load_data_config():
         with open(DATA_CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
         return config
+def load_loadcells_config():
+    config = configparser.ConfigParser()
+    if os.path.exists(LOADCELLS_CONFIG_FILE):
+        config.read(LOADCELLS_CONFIG_FILE)
+        return config
+    else:
+        # Create default config
+        config['Calibration Factors'] = {
+            'loadcell1': '7050',
+            'loadcell2': '7050',
+            'loadcell3': '7050'
+        }
+        with open(LOADCELLS_CONFIG_FILE, 'w') as configfile:
+            config.write(configfile)
+        return config
 def save_test_config():
     global settings
     config = configparser.ConfigParser()
@@ -107,10 +127,20 @@ def save_data_config():
     }
     with open(DATA_CONFIG_FILE, 'w') as configfile:
         config.write(configfile)
-
+def save_loadcells_config():
+    global cf1,cf2,cf3
+    config = configparser.ConfigParser()
+    config['Calibration Factors'] = {
+            'loadcell1': cf1,
+            'loadcell2': cf2,
+            'loadcell3': cf3
+    }
+    with open(DATA_CONFIG_FILE, 'w') as configfile:
+        config.write(configfile)
 # Load configuration at startup
 config_test = load_test_config()
 config_data = load_data_config()
+config_loadcells = load_loadcells_config()
 graph_x = config_data['GRAPH'].get('x_axis', 'Time')
 graph_y = config_data['GRAPH'].get('y_axis', 'Thrust')
 autolog = config_data['GENERAL'].getboolean('autolog', True)
@@ -406,8 +436,8 @@ def show_calibration_options():
     Calibrate.grid_forget()
 
     # Show ESC and Loadcell calibrate buttons in the same grid area
-    calibrate_esc_button.grid(row=3, column=1, pady=5, padx=5, sticky='ew')
-    calibrate_loadcell_button.grid(row=4, column=1, pady=5, padx=5, sticky='ew')
+    calibrate_esc_button.grid(row=3, column=2, pady=5, padx=5, sticky='ew')
+    calibrate_loadcell_button.grid(row=4, column=2, pady=5, padx=5, sticky='ew')
 
     # Store references to hide them later
     Calibrate.current_sub_buttons = [calibrate_esc_button, calibrate_loadcell_button]
@@ -427,7 +457,7 @@ def show_loadcell_calibration_menu():
         btn.grid_forget()
 
     # Show loadcell calibration elements in the same grid area as the Calibrate button
-    loadcell_calibrate_frame.grid(row=3, column=1, rowspan=2, pady=5, padx=5, sticky='nsew')
+    loadcell_calibrate_frame.grid(row=3, column=2, rowspan=2, pady=5, padx=5, sticky='nsew')
     loadcell_picker_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
     loadcell_picker.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
     zero_loadcell_button.grid(row=1, column=0, columnspan=2, pady=5, padx=5, sticky='ew')
@@ -473,7 +503,7 @@ def back_to_main_calibrate_menu():
             btn.grid_forget()
 
     # Show main Calibrate button
-    Calibrate.grid(row=4, column=1, pady=5, padx=5, sticky='ew')
+    Calibrate.grid(row=4, column=2, pady=5, padx=5, sticky='ew')
 
 
 def SerialMonitor(): # Serial monitor tkinter button
@@ -515,7 +545,7 @@ def fix_autostart():
     Send("e")
 
 def test_loop():
-    global kill, settings, data, autolog
+    global kill, settings, data, autolog,PWM
     # Reset data storage at start of test
     for key in data_map:
         data_map[key] = []
@@ -598,7 +628,6 @@ def update_test_settings_display():
     pwm_end_label.config(text=f'PWM End: {settings[2]}')
     timestep_label.config(text=f'Timestep: {settings[3]}s')
 
-
 def change_color(feature, new_color):
     # Feature-specific button outline change
     if feature == connect:
@@ -625,7 +654,6 @@ def change_color(feature, new_color):
         feature.itemconfig(calibrate_loadcell_action_button_rect, outline=new_color)
     elif feature == back_to_main_calibrate_button:
         feature.itemconfig(back_to_main_calibrate_button_rect, outline=new_color)
-
 
 def on_mouse_down(event):
     global lastx, lasty
@@ -671,7 +699,6 @@ def logger_clicked():
     except Exception as e:
         print(f"Couldn't save data: {e}")
 
-
 def save_readings(data):
     global test_name, currentDIR
     if test_name == "":
@@ -703,7 +730,6 @@ def log_data_clicked(): # Renamed from graph_manim
     log_data_button.itemconfig(log_data_toggle_text, text='Data Logged')
     log_data_button.itemconfig(log_data_button_rect, outline=green)
     root.after(1500, lambda: log_data_button.itemconfig(log_data_toggle_text, text='Log Data')) # Reset text after 1.5s
-
 
 def load_images():
     global static_image, gif_frames, image_label
@@ -743,7 +769,7 @@ def load_images():
         image_label.config(image=static_image)
 
 def animate_gif():
-    global gif_index, gif_animation
+    global gif_index, gif_animation,PWM
     if gif_frames:
         image_label.config(image=gif_frames[gif_index])
         gif_index = (gif_index + 1) % len(gif_frames)

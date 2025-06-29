@@ -4,7 +4,7 @@
 #include "sensors.h"
 
 Motor Motor1(9);
-loadCell ThrustCell1(3,4);
+loadCell ThrustCell1(2,3);
 currentSensor CS1(A0);
 infraredSensor IR1(5);
 
@@ -17,9 +17,7 @@ void setup() {
   Serial.begin(9600);
   Motor1.connect();
   Motor1.speed(0);
-  ThrustCell1.connect();
-  //ThrustCell1.loadCell_Zero(); // this is an infinite loop while no sensor is attached
-
+  //ThrustCell1.connect();
   CS1.connect();
   IR1.connect();
   pinMode(LED_BUILTIN,OUTPUT);
@@ -60,11 +58,8 @@ void loop() {
 
       // Loadcell calibration strings
       //--------------------------------
-      }else if(command=="cz1"){     // zero before calibration
-        ThrustCell1.loadCellCalibrate_Zero();
-      }else if(command.startsWith("cl1")){      // calibrate after placing known mass
-        float known_mass=command.substring(3).toFloat();
-        ThrustCell1.loadCellCalibrate(known_mass);
+      }else if(command=="z"){
+        ThrustCell1.loadCell_Zero();
       }else{
         // if not a special string,it must be motor speed->send pwm value to motor and get readings
         PWM=command.toFloat();
