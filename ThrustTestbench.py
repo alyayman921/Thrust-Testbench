@@ -54,6 +54,9 @@ data_map = { # all data for a run
 # Flag to track if manual motor control is active (for initial 'i' command)
 manual_control_session_active = False # Renamed for clarity
 
+# Global variable for loadcell_var
+loadcell_var = None
+
 # Dark Mode Colors
 DARK_MODE_BG = '#2e2e2e'
 DARK_MODE_FG = '#ffffff'
@@ -186,6 +189,7 @@ calibations = [
     float(config_loadcells['Calibration Factors'].get('loadcell2', '7050')),
     float(config_loadcells['Calibration Factors'].get('loadcell3', '7050'))
 ]
+test_name = config_test['TEST'].get('test_name', '') # Load initial test name from config
 #Serial Communication
 #------------------------------------------------
 def Send(a):  # Send to Serial Port func
@@ -239,7 +243,7 @@ def SerialRefresh():
                                 data_map['RPM'].append(float(values[3]))
                                 raw_reading = float(values[4])
                                 # Assuming values[4] is for loadcell 1, if multiple loadcells are used this needs to be adapted.
-                                data_map['Thrust'].append(float(values[4]) * calibations[0])
+                                data_map['Thrust'].append(float(values[4]))
                                 data_map['Torque'].append(float(values[5]))
                                 # Update graph in real-Time
                                 root.after(0, update_graph)
@@ -255,6 +259,7 @@ def SerialRefresh():
             print(f"Error reading from serial: {e}")
             serial_thread_running = False # Stop thread on error
             break
+
 
 # Button Functions
 #------------------------------------------------
@@ -334,11 +339,11 @@ def apply_current_settings():
 def toggle_edit_mode():
     global settings, test_name
 
-    current_mode_text = edit_settings_button.itemcget(edit_settings_button_text, "text")
+    current_mode_text = edit_test_button.itemcget(edit_test_button_text, "text") # Renamed 'edit_settings_button' to 'edit_test_button'
 
-    if current_mode_text == "Edit Settings":
+    if current_mode_text == "Edit Test":
         # Switch to edit mode
-        edit_settings_button.itemconfig(edit_settings_button_text, text="Done Editing")
+        edit_test_button.itemconfig(edit_test_button_text, text="Done Editing")
 
         # Hide display labels
         Test_Name_Label.grid_forget()
@@ -370,13 +375,18 @@ def toggle_edit_mode():
         pwm_end_var_display.set(str(settings[2]))
         timestep_var_display.set(str(settings[3]))
 
+        # Show Save and Set as Default buttons
+        save_settings_button.grid(row=5, column=4, pady=5, padx=5, sticky='ew')
+        set_default_settings_button.grid(row=5, column=5, pady=5, padx=5, sticky='ew')
+
         # Ensure column 1 in settings_display_frame expands for entries
         settings_display_frame.grid_columnconfigure(1, weight=1)
 
     else: # Currently "Done Editing"
         # Before switching back, apply current settings
         apply_current_settings() # FIX: Call apply_current_settings here to save changes
-        save_test_config()
+        save_test_config() # Save settings to config file (excluding test_name)
+
         # Hide input labels and entries
         edit_test_name_label.grid_forget()
         test_name_entry.grid_forget()
@@ -388,6 +398,10 @@ def toggle_edit_mode():
         pwm_end_entry.grid_forget()
         edit_timestep_label.grid_forget()
         timestep_entry.grid_forget()
+
+        # Hide Save and Set as Default buttons
+        save_settings_button.grid_forget()
+        set_default_settings_button.grid_forget()
 
         # Re-grid display labels
         Test_Name_Label.grid(row=0, column=0, columnspan=2, sticky='w', padx=5, pady=2)
@@ -401,7 +415,7 @@ def toggle_edit_mode():
 
         update_test_settings_display() # Ensure labels show current settings
 
-# Advanced Mode
+# Data Config Panel (Advanced Mode)
 def toggle_advanced_mode_panel():
     if data_config_frame.winfo_ismapped(): # Check if it's currently visible
         data_config_frame.grid_forget() # Hide it
@@ -415,6 +429,9 @@ def toggle_advanced_mode_panel():
         data_config_frame.grid(row=5, column=0, columnspan=4, sticky='nsew', padx=5, pady=5)
         # Show Manual Control frame next to it
         manual_control_frame.grid(row=5, column=4, columnspan=3, sticky='nsew', padx=5, pady=5)
+        # Ensure initial state of calibration section within advanced mode
+        show_default_calibration_options()
+
 
 def set_autolog_in_main_window(value):
     global autolog
@@ -432,29 +449,31 @@ def update_axes_in_main_window(x, y):
 def send_manual_speed_on_slider_move(val): # val is passed by tk.Scale
     global manual_control_session_active
     if manual_control_session_active: # Only send command if session is active
-        send_manual_speed(val) # Call the core send function
+        # This will be called by slider movement if manual_control_session_active is True
+        # It sends only the speed, 'i' is only sent once by the "Manual Test" button
+        Send(str(int(val)))
+        print(f"Slider moved, sent speed: {int(val)}")
 
-def send_manual_speed(val=None): # Core function for sending manual speed
+def send_manual_test_start(): # This function is called only by the "Manual Test" button
     global manual_control_session_active, data_map
 
     if not connected:
-        print("Serial port not connected. Cannot send manual speed.")
+        print("Serial port not connected. Cannot start manual test.")
         return
 
-    speed = int(motor_speed_slider.get())
-
     if not manual_control_session_active:
-        # First time sending speed in this manual session
+        # Start a new manual control session
         Send('i') # Initialize motor control
         manual_control_session_active = True
         # Clear graph data for new manual test
         for key in data_map:
             data_map[key] = []
         update_graph() # Clear the plot
-        print("Manual control session started. Graph reset.")
-
-    Send(str(speed)) # Send the speed
-    print(f"Sent manual speed: {speed}")
+        print("Manual control session started. Graph reset. Initial speed sent.")
+        # Send initial speed from slider
+        Send(str(int(motor_speed_slider.get())))
+    else:
+        print("Manual control session already active. Use slider to change speed or 'Stop & Log'.")
 
 
 def stop_manual_control_and_log():
@@ -468,43 +487,52 @@ def stop_manual_control_and_log():
     logger_clicked() # Log data
     manual_control_session_active = False # Reset flag for next manual session
 
-# New calibration functions and UI management
+# Calibration Functions integrated into Advanced Mode
 #------------------------------------------------
-def show_calibration_options():
-    # Hide the main Calibrate button
-    Calibrate.grid_forget()
+def show_default_calibration_options():
+    # Hide all loadcell calibration elements explicitly
+    # Un-grid all elements that belong to the detailed loadcell calibration view
+    loadcell_picker_label.grid_forget()
+    loadcell_picker.grid_forget()
+    zero_loadcell_button.grid_forget()
+    known_mass_label.grid_forget()
+    known_mass_entry.grid_forget()
+    calibrate_loadcell_action_button.grid_forget()
+    back_to_adv_calibration_button.grid_forget()
 
-    # Show ESC and Loadcell calibrate buttons in the same grid area
-    calibrate_esc_button.grid(row=3, column=2, pady=5, padx=5, sticky='ew')
-    calibrate_loadcell_button.grid(row=4, column=2, pady=5, padx=5, sticky='ew')
+    # Show initial calibration buttons within calibration_container
+    calibration_main_label.grid(row=0, column=0, columnspan=2, pady=10, sticky='ew') # Ensure title is gridded
+    calibrate_esc_button_adv.grid(row=1, column=0, columnspan=2, pady=5, padx=5, sticky='ew') # Column 0, spanning 2 columns
+    calibrate_loadcell_button_adv.grid(row=2, column=0, columnspan=2, pady=5, padx=5, sticky='ew') # Column 0, spanning 2 columns
+    # Reset column weight
+    calibration_container.grid_columnconfigure(1, weight=0)
 
-    # Store references to hide them later
-    Calibrate.current_sub_buttons = [calibrate_esc_button, calibrate_loadcell_button]
 
 def calibrate_esc_func():
-    Calibrate.itemconfig(CalibrateB, outline=red) # Use main button's color for feedback
+    # Visual feedback for the button within Advanced Mode
+    calibrate_esc_button_adv.itemconfig(calibrate_esc_button_rect_adv, outline=red)
     Send('c')
     time.sleep(4)
-    Calibrate.itemconfig(CalibrateB, outline=green)
+    calibrate_esc_button_adv.itemconfig(calibrate_esc_button_rect_adv, outline=green)
     print("ESC Calibration Done!")
-    Calibrate.itemconfig(CalibrateB, outline=current_normal_color) # Reset color
-    back_to_main_calibrate_menu() # Retract buttons after calibration
+    calibrate_esc_button_adv.itemconfig(calibrate_esc_button_rect_adv, outline=current_normal_color) # Reset color
 
-def show_loadcell_calibration_menu():
-    # Hide initial calibration sub-buttons
-    if hasattr(Calibrate, 'current_sub_buttons'):
-        for btn in Calibrate.current_sub_buttons:
-            btn.grid_forget()
+def show_loadcell_calibration_menu_adv():
+    # Hide general calibration options within Advanced Mode
+    calibration_main_label.grid_forget()
+    calibrate_esc_button_adv.grid_forget()
+    calibrate_loadcell_button_adv.grid_forget()
 
-    # Show loadcell calibration elements in the same grid area as the Calibrate button
-    loadcell_calibrate_frame.grid(row=3, column=2, rowspan=2, pady=5, padx=5, sticky='nsew')
+    # Show loadcell calibration elements within calibration_container
     loadcell_picker_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
     loadcell_picker.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
     zero_loadcell_button.grid(row=1, column=0, columnspan=2, pady=5, padx=5, sticky='ew')
     known_mass_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
     known_mass_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
     calibrate_loadcell_action_button.grid(row=3, column=0, columnspan=2, pady=5, padx=5, sticky='ew')
-    back_to_main_calibrate_button.grid(row=4, column=0, columnspan=2, pady=5, padx=5, sticky='ew')
+    back_to_adv_calibration_button.grid(row=4, column=0, columnspan=2, pady=5, padx=5, sticky='ew')
+    # Ensure column 1 of calibration_container is expandable for loadcell_picker/entry
+    calibration_container.grid_columnconfigure(1, weight=1)
 
 def zero_loadcell_func():
     selected_loadcell = loadcell_var.get()
@@ -537,17 +565,21 @@ def calibrate_loadcell_func():
     except Exception as e:
         print(f"An error occurred during loadcell calibration: {e}")
 
-def back_to_main_calibrate_menu():
-    # Hide loadcell calibration elements
-    loadcell_calibrate_frame.grid_forget()
+def back_to_adv_calibration_menu():
+    # Hide loadcell calibration elements by forgetting their grid placement
+    loadcell_picker_label.grid_forget()
+    loadcell_picker.grid_forget()
+    zero_loadcell_button.grid_forget()
+    known_mass_label.grid_forget()
+    known_mass_entry.grid_forget()
+    calibrate_loadcell_action_button.grid_forget()
+    back_to_adv_calibration_button.grid_forget()
 
-    # Hide ESC and Loadcell calibrate buttons if they are currently shown
-    if hasattr(Calibrate, 'current_sub_buttons'):
-        for btn in Calibrate.current_sub_buttons:
-            btn.grid_forget()
+    # Show default calibration options
+    show_default_calibration_options()
+    # Reset column weight
+    calibration_container.grid_columnconfigure(1, weight=0)
 
-    # Show main Calibrate button
-    Calibrate.grid(row=4, column=2, pady=5, padx=5, sticky='ew')
 
 def SerialMonitor(): # Serial monitor tkinter button
     global expanded
@@ -741,6 +773,9 @@ def apply_theme():
 
     # Update Data Config frame (Advanced Mode) and its widgets
     data_config_frame.config(bg=current_bg_color, highlightbackground=current_normal_color)
+    graph_options_container.config(bg=current_bg_color) # Update container
+    calibration_container.config(bg=current_bg_color) # Update container
+
     data_config_autolog_cb.config(**checkbutton_options)
     dark_mode_var_config.set(dark_mode_enabled) # Keep checkbox in sync with actual mode
     data_config_dark_mode_cb.config(**checkbutton_options)
@@ -758,10 +793,10 @@ def apply_theme():
         image_label.config(bg=current_bg_color)
 
     # Update canvases (buttons)
-    for canvas_widget in [connect, start, edit_settings_button, logger, log_data_button, Calibrate,
-                          calibrate_esc_button, calibrate_loadcell_button,
-                          zero_loadcell_button, calibrate_loadcell_action_button, back_to_main_calibrate_button,
-                          manual_test_button, stop_manual_button]: # Add new manual control buttons
+    for canvas_widget in [connect, start, edit_test_button, logger, log_data_button, sm_button,
+                          calibrate_esc_button_adv, calibrate_loadcell_button_adv, # These are now in Advanced Mode frame
+                          zero_loadcell_button, calibrate_loadcell_action_button, back_to_adv_calibration_button,
+                          manual_test_button, stop_manual_button]: # Manual control buttons
         canvas_widget.config(bg=current_bg_color)
         # Update polygons in canvases
         for item_id in canvas_widget.find_all():
@@ -770,12 +805,16 @@ def apply_theme():
             elif canvas_widget.type(item_id) == "text":
                 canvas_widget.itemconfig(item_id, fill=current_fg_color) # Ensure text color is updated
 
-    # Update loadcell calibration frame (tk.Frame and inner widgets)
-    loadcell_calibrate_frame.config(bg=current_bg_color, highlightbackground=current_normal_color)
+
+    # Update loadcell calibration frame and its child widgets' colors
+    # These widgets are children of calibration_container, so they need to be updated.
     loadcell_picker_label.config(bg=current_bg_color, fg=current_fg_color)
-    # loadcell_picker is ttk.Combobox, its style is updated above.
+    # The Combobox's style should handle its background/foreground, but if needed:
+    # Removed direct fieldbackground config here as it causes the error
+    loadcell_picker.config(background=current_bg_color, foreground=current_fg_color) # Removed fieldbackground
     known_mass_label.config(bg=current_bg_color, fg=current_fg_color)
     known_mass_entry.config(bg=current_bg_color, fg=current_fg_color, insertbackground=current_fg_color)
+
 
     # Update Matplotlib plot
     Thrust_Figure.patch.set_facecolor(current_bg_color)
@@ -809,28 +848,27 @@ def change_color(feature, new_color):
         feature.itemconfig(startB, outline=new_color)
     elif feature == sm_button:
         feature.itemconfig(sm_button_rect, outline=new_color)
-    elif feature == logger: # This is the Data Config button now
+    elif feature == logger: # This is the Data Config button now (Advanced Mode)
         feature.itemconfig(loggerB, outline=new_color)
-    elif feature == edit_settings_button: # Renamed from 'test'
-        feature.itemconfig(edit_settings_button_rect, outline=new_color)
-    elif feature == Calibrate: # Main calibrate button
-        feature.itemconfig(CalibrateB, outline=new_color)
+    elif feature == edit_test_button: # Renamed from 'test'
+        feature.itemconfig(edit_test_button_rect, outline=new_color)
     elif feature == log_data_button:
         feature.itemconfig(log_data_button_rect, outline=new_color)
-    elif feature == calibrate_esc_button: # New ESC calibrate button
-        feature.itemconfig(calibrate_esc_button_rect, outline=new_color)
-    elif feature == calibrate_loadcell_button: # New Loadcell calibrate button
-        feature.itemconfig(calibrate_loadcell_button_rect, outline=new_color)
+    # Data Config Panel internal buttons (now part of the Advanced Mode frame)
+    elif feature == calibrate_esc_button_adv:
+        calibrate_esc_button_adv.itemconfig(calibrate_esc_button_rect_adv, outline=new_color)
+    elif feature == calibrate_loadcell_button_adv:
+        calibrate_loadcell_button_adv.itemconfig(calibrate_loadcell_button_rect_adv, outline=new_color)
     elif feature == zero_loadcell_button: # Zero loadcell button
-        feature.itemconfig(zero_loadcell_button_rect, outline=new_color)
+        zero_loadcell_button.itemconfig(zero_loadcell_button_rect, outline=new_color)
     elif feature == calibrate_loadcell_action_button: # Calibrate loadcell action button
-        feature.itemconfig(calibrate_loadcell_action_button_rect, outline=new_color)
-    elif feature == back_to_main_calibrate_button:
-        feature.itemconfig(back_to_main_calibrate_button_rect, outline=new_color)
-    # Add new manual control canvas buttons here for hover/press effects
-    elif feature == manual_test_button: # Manual Test button
+        calibrate_loadcell_action_button.itemconfig(calibrate_loadcell_action_button_rect, outline=new_color)
+    elif feature == back_to_adv_calibration_button:
+        back_to_adv_calibration_button.itemconfig(back_to_adv_calibration_button_rect, outline=new_color)
+    # Manual Control Panel buttons
+    elif feature == manual_test_button:
         manual_test_button.itemconfig(manual_test_button_rect, outline=new_color)
-    elif feature == stop_manual_button: # Stop & Log button
+    elif feature == stop_manual_button:
         stop_manual_button.itemconfig(stop_manual_control_button_rect, outline=new_color)
 
 
@@ -970,7 +1008,8 @@ def debug_shortcuts(event):
     # Define actions based on the key pressed
     if event.name == 'space':
         global kill
-        Send("e")
+        if not kill:
+            Send("e")
         kill = True
 
 def detect_key_press():
@@ -1126,9 +1165,79 @@ data_p7 = (275*0.5, 10*0.5)
 
 
 # --- Buttons in a single row (row 4) ---
-# Ordered from right to left as requested (1. Connect, 2. Start Test, 3. Define Test -> now Edit Settings, 4. Data Config, 5. Log Data, 6. Calibrate, 7. Serial Monitor)
+# Order from left to right: Serial Monitor, Log Data, Advanced Mode, Edit Test, Start Test, Connect (with Serial Picker above it)
 
-# 1. Connect button (Column 4)
+# 1. Serial Monitor button (Column 0)
+sm_button = Canvas(root,width=button_width,height=button_height, bg=current_bg_color,borderwidth=0,highlightthickness=0)
+sm_button_rect = sm_button.create_polygon(
+p1,p2,p3,p4,p5,p6,p7,
+outline=current_normal_color, width=2,
+fill=current_fill_color
+)
+sm_button.create_text((button_width/2,button_height/2), text="Serial Monitor", font="Play 12 bold",fill=current_fg_color)
+sm_button.grid(row=4, column=0, pady=5, padx=5, sticky='ew')
+sm_button.bind("<Enter>", lambda event: change_color(sm_button,current_hover_color))
+sm_button.bind("<Leave>", lambda event: change_color(sm_button,current_normal_color))
+sm_button.bind("<Button-1>", lambda event: change_color(sm_button,current_press_color))
+sm_button.bind("<ButtonRelease-1>", lambda event: SerialMonitor())
+
+# 2. Log Data button (Column 1)
+log_data_button = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+log_data_button_rect = log_data_button.create_polygon(
+    p1, p2, p3, p4, p5, p6, p7,
+    outline=current_normal_color, width=2,
+    fill=current_fill_color
+)
+log_data_toggle_text = log_data_button.create_text((button_width/2, button_height/2), text="Log Data", font="Play 12 bold", fill=current_fg_color)
+log_data_button.grid(row=4, column=1, pady=5, padx=5, sticky='ew')
+log_data_button.bind("<Enter>", lambda event: change_color(log_data_button, current_hover_color))
+log_data_button.bind("<Leave>", lambda event: change_color(log_data_button, current_normal_color))
+log_data_button.bind("<Button-1>", lambda event: change_color(log_data_button, current_press_color))
+log_data_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=log_data_clicked).start())
+
+# 3. Advanced Mode (Data Config) button (Column 2)
+logger = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+loggerB = logger.create_polygon(
+    p1, p2, p3, p4, p5, p6, p7,
+    outline=current_normal_color, width=2,
+    fill=current_fill_color
+)
+logger.create_text((button_width/2, button_height/2), text="Advanced Mode", font="Play 12 bold", fill=current_fg_color) # Renamed to Advanced Mode
+logger.grid(row=4, column=2, pady=3, padx=5, sticky='ew')
+logger.bind("<Enter>", lambda event: change_color(logger, current_hover_color))
+logger.bind("<Leave>", lambda event: change_color(logger, current_normal_color))
+logger.bind("<Button-1>", lambda event: change_color(logger, current_press_color))
+logger.bind("<ButtonRelease-1>", lambda event: toggle_advanced_mode_panel()) # Call new toggle function
+
+# 4. Edit Test button (Column 3)
+edit_test_button = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+edit_test_button_rect = edit_test_button.create_polygon(
+    p1, p2, p3, p4, p5, p6, p7,
+    outline=current_normal_color, width=3,
+    fill=current_fill_color
+)
+edit_test_button_text = edit_test_button.create_text((button_width/2, button_height/2), text="Edit Test", font="Play 12 bold", fill=current_fg_color) # Renamed to Edit Test
+edit_test_button.grid(row=4, column=3, pady=5, padx=5, sticky='ew') # Changed column from 4 to 3
+edit_test_button.bind("<Enter>", lambda event: change_color(edit_test_button, current_hover_color))
+edit_test_button.bind("<Leave>", lambda event: change_color(edit_test_button, current_normal_color))
+edit_test_button.bind("<Button-1>", lambda event: change_color(edit_test_button, current_press_color))
+edit_test_button.bind("<ButtonRelease-1>", lambda event: toggle_edit_mode())
+
+# 5. Start Test button (Column 4)
+start = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+startB = start.create_polygon(
+    p1, p2, p3, p4, p5, p6, p7,
+    outline=current_normal_color, width=3,
+    fill=current_fill_color
+)
+start_toggle_text = start.create_text((button_width/2, button_height/2), text="Start Test", font="Play 12 bold", fill=current_fg_color)
+start.grid(row=4, column=4, pady=5, padx=5, sticky='ew') # Changed column from 5 to 4
+start.bind("<Enter>", lambda event: change_color(start, current_hover_color))
+start.bind("<Leave>", lambda event: change_color(start, current_normal_color))
+start.bind("<Button-1>", lambda event: change_color(start, current_press_color))
+start.bind("<ButtonRelease-1>", lambda event: start_clicked())
+
+# 6. Connect button (Column 5)
 connect = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
 connectB = connect.create_polygon(
     p1, p2, p3, p4, p5, p6, p7,
@@ -1136,15 +1245,15 @@ connectB = connect.create_polygon(
     fill=current_fill_color
 )
 connect_toggle_text = connect.create_text((button_width/2, button_height/2), text="Connect", font="Play 12 bold", fill=current_fg_color)
-connect.grid(row=4, column=6, pady=5, padx=5, sticky='ew')
+connect.grid(row=4, column=5, pady=5, padx=5, sticky='ew') # Changed column from 6 to 5
 connect.bind("<Enter>", lambda event: change_color(connect, current_hover_color))
 connect.bind("<Leave>", lambda event: change_color(connect, current_normal_color))
 connect.bind("<Button-1>", lambda event: change_color(connect, current_press_color))
 connect.bind("<ButtonRelease-1>", lambda event: connect_clicked())
 
-# Serial Port Picker - Directly above Connect button
+# Serial Port Picker - Directly above Connect button (Column 5, Row 3)
 port_frame = tk.Frame(root, bg=current_bg_color)
-port_frame.grid(row=3, column=6, pady=10, sticky='s') # Placed directly above connect button
+port_frame.grid(row=3, column=5, pady=10, sticky='s', padx=(0, 5)) # Reduced padx on right
 port_frame.bind("<Enter>", refreshSerialPorts)
 serial_title = tk.Label(port_frame, font=('Play', 14), fg=current_fg_color, bg=current_bg_color, text="Serial Port :")
 serial_title.pack(side="left")
@@ -1155,59 +1264,29 @@ SerialPorts.pack(pady=15, padx=20, side=("right"))
 SerialPorts.current()
 
 
-# 2. Start Test button (Column 5)
-start = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-startB = start.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=3,
-    fill=current_fill_color
-)
-start_toggle_text = start.create_text((button_width/2, button_height/2), text="Start Test", font="Play 12 bold", fill=current_fg_color)
-start.grid(row=4, column=5, pady=5, padx=5, sticky='ew')
-start.bind("<Enter>", lambda event: change_color(start, current_hover_color))
-start.bind("<Leave>", lambda event: change_color(start, current_normal_color))
-start.bind("<Button-1>", lambda event: change_color(start, current_press_color))
-start.bind("<ButtonRelease-1>", lambda event: start_clicked())
-
-# 3. Edit Settings button (Column 3)
-edit_settings_button = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-edit_settings_button_rect = edit_settings_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=3,
-    fill=current_fill_color
-)
-edit_settings_button_text = edit_settings_button.create_text((button_width/2, button_height/2), text="Edit Settings", font="Play 12 bold", fill=current_fg_color)
-edit_settings_button.grid(row=4, column=4, pady=5, padx=5, sticky='ew')
-edit_settings_button.bind("<Enter>", lambda event: change_color(edit_settings_button, current_hover_color))
-edit_settings_button.bind("<Leave>", lambda event: change_color(edit_settings_button, current_normal_color))
-edit_settings_button.bind("<Button-1>", lambda event: change_color(edit_settings_button, current_press_color))
-edit_settings_button.bind("<ButtonRelease-1>", lambda event: toggle_edit_mode())
-
-
-# 4. Advanced Mode (Data Config) button - Now toggles data_config_frame visibility
-logger = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-loggerB = logger.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-logger.create_text((button_width/2, button_height/2), text="Advanced Mode", font="Play 12 bold", fill=current_fg_color) # Renamed to Advanced Mode
-logger.grid(row=4, column=3, pady=3, padx=5, sticky='ew')
-logger.bind("<Enter>", lambda event: change_color(logger, current_hover_color))
-logger.bind("<Leave>", lambda event: change_color(logger, current_normal_color))
-logger.bind("<Button-1>", lambda event: change_color(logger, current_press_color))
-logger.bind("<ButtonRelease-1>", lambda event: toggle_advanced_mode_panel()) # Call new toggle function
-
 # Data Config Frame (Advanced Mode)
 data_config_frame = tk.Frame(root, bg=current_bg_color, borderwidth=2, relief="groove",
                              highlightbackground=current_normal_color, highlightthickness=2)
-data_config_frame.grid_columnconfigure(1, weight=1) # Allow comboboxes to expand
+data_config_frame.grid_columnconfigure(0, weight=1) # Graph Options container
+data_config_frame.grid_columnconfigure(1, weight=1) # Calibration Options container
 data_config_frame.grid_forget() # Initially hidden
 
+# Sub-frames within Advanced Mode for organization (horizontal arrangement)
+graph_options_container = tk.Frame(data_config_frame, bg=current_bg_color)
+graph_options_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+calibration_container = tk.Frame(data_config_frame, bg=current_bg_color)
+calibration_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+# Make calibration_container a grid manager for its contents
+calibration_container.grid_columnconfigure(0, weight=1)
+calibration_container.grid_columnconfigure(1, weight=1)
+
+
+# Content for Graphing Options Container (Moved from data_config_frame)
 # Auto logging checkbox
 autolog_var = tk.BooleanVar(value=autolog)
 data_config_autolog_cb = tk.Checkbutton(
-    data_config_frame,
+    graph_options_container, # Parented to graph_options_container
     text="Enable csv Logging",
     variable=autolog_var,
     command=lambda: set_autolog_in_main_window(autolog_var.get()),
@@ -1218,7 +1297,7 @@ data_config_autolog_cb.pack(pady=10)
 # Dark mode checkbox
 dark_mode_var_config = tk.BooleanVar(value=dark_mode_enabled) # Separate var for this window's checkbox
 data_config_dark_mode_cb = tk.Checkbutton(
-    data_config_frame,
+    graph_options_container, # Parented to graph_options_container
     text="Enable Dark Mode",
     variable=dark_mode_var_config,
     command=lambda: toggle_dark_mode(dark_mode_var_config.get()),
@@ -1227,8 +1306,8 @@ data_config_dark_mode_cb = tk.Checkbutton(
 data_config_dark_mode_cb.pack(pady=5)
 
 # Graphing options frame within data_config_frame
-data_config_graph_frame = tk.LabelFrame(data_config_frame, text="Graphing Options", bg=current_bg_color, fg=current_fg_color)
-data_config_graph_frame.pack(pady=10, padx=20, fill="x")
+data_config_graph_frame = tk.LabelFrame(graph_options_container, text="Graphing Options", bg=current_bg_color, fg=current_fg_color) # Parented to graph_options_container
+data_config_graph_frame.pack(pady=10, padx=5, fill="x", expand=True) # Reduced padx
 
 # X variable selection
 data_config_x_label = tk.Label(data_config_graph_frame, text="X-Axis:", bg=current_bg_color, fg=current_fg_color)
@@ -1284,6 +1363,80 @@ data_config_default_btn_canvas.bind("<Button-1>", lambda event: change_color(dat
 data_config_default_btn_canvas.bind("<ButtonRelease-1>", lambda event: save_data_config())
 
 
+# Calibration Options within Advanced Mode (new section)
+# Main label for calibration section
+calibration_main_label = tk.Label(calibration_container, text="Calibration Options", font="Play 12 bold", bg=current_bg_color, fg=current_fg_color)
+# Packing of these will be handled by show_default_calibration_options
+
+# Calibrate ESC button (within Advanced Mode)
+calibrate_esc_button_adv = Canvas(calibration_container, width=data_button_width, height=data_button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+calibrate_esc_button_rect_adv = calibrate_esc_button_adv.create_polygon(
+    data_p1, data_p2, data_p3, data_p4, data_p5, data_p6, data_p7,
+    outline=current_normal_color, width=2, fill=current_fill_color
+)
+calibrate_esc_button_text_adv = calibrate_esc_button_adv.create_text((data_button_width/2, data_button_height/2), text="Calibrate ESC", font="Play 9 bold", fill=current_fg_color)
+calibrate_esc_button_adv.bind("<Enter>", lambda event: change_color(calibrate_esc_button_adv, current_hover_color))
+calibrate_esc_button_adv.bind("<Leave>", lambda event: change_color(calibrate_esc_button_adv, current_normal_color))
+calibrate_esc_button_adv.bind("<Button-1>", lambda event: change_color(calibrate_esc_button_adv, current_press_color))
+calibrate_esc_button_adv.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=calibrate_esc_func).start())
+
+# Calibrate Loadcells button (within Advanced Mode)
+calibrate_loadcell_button_adv = Canvas(calibration_container, width=data_button_width, height=data_button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+calibrate_loadcell_button_rect_adv = calibrate_loadcell_button_adv.create_polygon(
+    data_p1, data_p2, data_p3, data_p4, data_p5, data_p6, data_p7,
+    outline=current_normal_color, width=2, fill=current_fill_color
+)
+calibrate_loadcell_button_text_adv = calibrate_loadcell_button_adv.create_text((data_button_width/2, data_button_height/2), text="Calibrate Loadcells", font="Play 9 bold", fill=current_fg_color)
+calibrate_loadcell_button_adv.bind("<Enter>", lambda event: change_color(calibrate_loadcell_button_adv, current_hover_color))
+calibrate_loadcell_button_adv.bind("<Leave>", lambda event: change_color(calibrate_loadcell_button_adv, current_normal_color))
+calibrate_loadcell_button_adv.bind("<Button-1>", lambda event: change_color(calibrate_loadcell_button_adv, current_press_color))
+calibrate_loadcell_button_adv.bind("<ButtonRelease-1>", lambda event: show_loadcell_calibration_menu_adv())
+
+# Loadcell Calibration Sub-menu elements (initially hidden, parented to calibration_container)
+loadcell_var = tk.StringVar(value="1") # Global definition for loadcell_var (moved here from inside function)
+
+# Define all loadcell calibration widgets, parented to calibration_container
+# These will be gridded/ungridded by show_loadcell_calibration_menu_adv and back_to_adv_calibration_menu
+loadcell_picker_label = tk.Label(calibration_container, text="Select Loadcell:", bg=current_bg_color, fg=current_fg_color, font="Play 10")
+loadcell_picker = ttk.Combobox(calibration_container, textvariable=loadcell_var, values=["1", "2", "3"], state="readonly", font="Play 10", width=8, style='TCombobox')
+
+zero_loadcell_button = Canvas(calibration_container, width=data_button_width, height=data_button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+zero_loadcell_button_rect = zero_loadcell_button.create_polygon(
+    data_p1, data_p2, data_p3, data_p4, data_p5, data_p6, data_p7,
+    outline=current_normal_color, width=2, fill=current_fill_color
+)
+zero_loadcell_button.create_text((data_button_width/2, data_button_height/2), text="Zero Loadcell", font="Play 9 bold", fill=current_fg_color)
+zero_loadcell_button.bind("<Enter>", lambda event: change_color(zero_loadcell_button, current_hover_color))
+zero_loadcell_button.bind("<Leave>", lambda event: change_color(zero_loadcell_button, current_normal_color))
+zero_loadcell_button.bind("<Button-1>", lambda event: change_color(zero_loadcell_button, current_press_color))
+zero_loadcell_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=zero_loadcell_func).start())
+
+known_mass_label = tk.Label(calibration_container, text="Known Mass:", bg=current_bg_color, fg=current_fg_color, font="Play 10")
+known_mass_entry = tk.Entry(calibration_container, font="Play 10", bg=current_bg_color, fg=current_fg_color, insertbackground=current_fg_color)
+
+calibrate_loadcell_action_button = Canvas(calibration_container, width=data_button_width, height=data_button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+calibrate_loadcell_action_button_rect = calibrate_loadcell_action_button.create_polygon(
+    data_p1, data_p2, data_p3, data_p4, data_p5, data_p6, data_p7,
+    outline=current_normal_color, width=2, fill=current_fill_color
+)
+calibrate_loadcell_action_button.create_text((data_button_width/2, data_button_height/2), text="Calibrate", font="Play 9 bold", fill=current_fg_color)
+calibrate_loadcell_action_button.bind("<Enter>", lambda event: change_color(calibrate_loadcell_action_button, current_hover_color))
+calibrate_loadcell_action_button.bind("<Leave>", lambda event: change_color(calibrate_loadcell_action_button, current_normal_color))
+calibrate_loadcell_action_button.bind("<Button-1>", lambda event: change_color(calibrate_loadcell_action_button, current_press_color))
+calibrate_loadcell_action_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=calibrate_loadcell_func).start())
+
+back_to_adv_calibration_button = Canvas(calibration_container, width=data_button_width, height=data_button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
+back_to_adv_calibration_button_rect = back_to_adv_calibration_button.create_polygon(
+    data_p1, data_p2, data_p3, data_p4, data_p5, data_p6, data_p7,
+    outline=current_normal_color, width=2, fill=current_fill_color
+)
+back_to_adv_calibration_button.create_text((data_button_width/2, data_button_height/2), text="Back", font="Play 9 bold", fill=current_fg_color)
+back_to_adv_calibration_button.bind("<Enter>", lambda event: change_color(back_to_adv_calibration_button, current_hover_color))
+back_to_adv_calibration_button.bind("<Leave>", lambda event: change_color(back_to_adv_calibration_button, current_normal_color))
+back_to_adv_calibration_button.bind("<Button-1>", lambda event: change_color(back_to_adv_calibration_button, current_press_color))
+back_to_adv_calibration_button.bind("<ButtonRelease-1>", lambda event: back_to_adv_calibration_menu())
+
+
 # Manual Speed Control Frame (next to Data Config frame)
 manual_control_frame = tk.Frame(root, bg=current_bg_color, borderwidth=2, relief="groove",
                                  highlightbackground=current_normal_color, highlightthickness=2)
@@ -1309,10 +1462,11 @@ manual_test_button.pack(pady=5)
 manual_test_button.bind("<Enter>", lambda event: change_color(manual_test_button, current_hover_color))
 manual_test_button.bind("<Leave>", lambda event: change_color(manual_test_button, current_normal_color))
 manual_test_button.bind("<Button-1>", lambda event: change_color(manual_test_button, current_press_color))
-manual_test_button.bind("<ButtonRelease-1>", lambda event: send_manual_speed()) # Initial send for slider's current value
+manual_test_button.bind("<ButtonRelease-1>", lambda event: send_manual_test_start()) # This initiates the manual test session
+
 
 stop_manual_button = Canvas(manual_control_frame, width=data_button_width, height=data_button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-stop_manual_control_button_rect = stop_manual_button.create_polygon(
+stop_manual_button_rect = stop_manual_button.create_polygon(
     data_p1, data_p2, data_p3, data_p4, data_p5, data_p6, data_p7,
     outline=current_normal_color, width=2, fill=current_fill_color
 )
@@ -1324,128 +1478,7 @@ stop_manual_button.bind("<Button-1>", lambda event: change_color(stop_manual_but
 stop_manual_button.bind("<ButtonRelease-1>", lambda event: stop_manual_control_and_log())
 
 
-# 5. Log Data button (Column 6 - rightmost)
-log_data_button = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-log_data_button_rect = log_data_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-log_data_toggle_text = log_data_button.create_text((button_width/2, button_height/2), text="Log Data", font="Play 12 bold", fill=current_fg_color)
-log_data_button.grid(row=4, column=1, pady=5, padx=5, sticky='ew')
-log_data_button.bind("<Enter>", lambda event: change_color(log_data_button, current_hover_color))
-log_data_button.bind("<Leave>", lambda event: change_color(log_data_button, current_normal_color))
-log_data_button.bind("<Button-1>", lambda event: change_color(log_data_button, current_press_color))
-log_data_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=log_data_clicked).start())
-
-
-# 6. Calibrate button (Column 1) - Now acts as 'Calibration Options'
-Calibrate = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-CalibrateB = Calibrate.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-Calibrate_toggle_text = Calibrate.create_text((button_width/2, button_height/2), text="Calibration Options", font="Play 12 bold", fill=current_fg_color)
-Calibrate.grid(row=4, column=2, pady=5, padx=5, sticky='ew')
-Calibrate.bind("<Enter>", lambda event: change_color(Calibrate, current_hover_color))
-Calibrate.bind("<Leave>", lambda event: change_color(Calibrate, current_normal_color))
-Calibrate.bind("<Button-1>", lambda event: change_color(Calibrate, current_press_color))
-Calibrate.bind("<ButtonRelease-1>", lambda event: show_calibration_options()) # Call new function
-
-# New calibration buttons (initially hidden)
-# Calibrate ESC button
-calibrate_esc_button = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-calibrate_esc_button_rect = calibrate_esc_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-calibrate_esc_button.create_text((button_width/2, button_height/2), text="Calibrate ESC", font="Play 10 bold", fill=current_fg_color)
-calibrate_esc_button.bind("<Enter>", lambda event: change_color(calibrate_esc_button, current_hover_color))
-calibrate_esc_button.bind("<Leave>", lambda event: change_color(calibrate_esc_button, current_normal_color))
-calibrate_esc_button.bind("<Button-1>", lambda event: change_color(calibrate_esc_button, current_press_color))
-calibrate_esc_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=calibrate_esc_func).start())
-
-# Calibrate Loadcells button
-calibrate_loadcell_button = Canvas(root, width=button_width, height=button_height, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-calibrate_loadcell_button_rect = calibrate_loadcell_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-calibrate_loadcell_button.create_text((button_width/2, button_height/2), text="Calibrate Loadcells", font="Play 10 bold", fill=current_fg_color)
-calibrate_loadcell_button.bind("<Enter>", lambda event: change_color(calibrate_loadcell_button, current_hover_color))
-calibrate_loadcell_button.bind("<Leave>", lambda event: change_color(calibrate_loadcell_button, current_normal_color))
-calibrate_loadcell_button.bind("<Button-1>", lambda event: change_color(calibrate_loadcell_button, current_press_color))
-calibrate_loadcell_button.bind("<ButtonRelease-1>", lambda event: show_loadcell_calibration_menu())
-
-
-# Loadcell Calibration Sub-menu elements (initially hidden)
-loadcell_calibrate_frame = tk.Frame(root, bg=current_bg_color, borderwidth=2, relief="groove",
-                                    highlightbackground=current_normal_color, highlightthickness=2)
-loadcell_calibrate_frame.grid_columnconfigure(1, weight=1) # Allow loadcell picker and entry to expand
-
-loadcell_var = tk.StringVar(value="1") # Default loadcell
-loadcell_picker_label = tk.Label(loadcell_calibrate_frame, text="Select Loadcell:", bg=current_bg_color, fg=current_fg_color, font="Play 10")
-loadcell_picker = ttk.Combobox(loadcell_calibrate_frame, textvariable=loadcell_var, values=["1", "2", "3"], state="readonly", font="Play 10", width=8, style='TCombobox')
-# The background/foreground for Combobox in an external frame can be tricky; style should handle it.
-
-zero_loadcell_button = Canvas(loadcell_calibrate_frame, width=button_width, height=button_height*0.7, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-zero_loadcell_button_rect = zero_loadcell_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-zero_loadcell_button.create_text((button_width/2, button_height*0.7/2), text="Zero Loadcell", font="Play 9 bold", fill=current_fg_color)
-zero_loadcell_button.bind("<Enter>", lambda event: change_color(zero_loadcell_button, current_hover_color))
-zero_loadcell_button.bind("<Leave>", lambda event: change_color(zero_loadcell_button, current_normal_color))
-zero_loadcell_button.bind("<Button-1>", lambda event: change_color(zero_loadcell_button, current_press_color))
-zero_loadcell_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=zero_loadcell_func).start())
-
-known_mass_label = tk.Label(loadcell_calibrate_frame, text="Known Mass:", bg=current_bg_color, fg=current_fg_color, font="Play 10")
-known_mass_entry = tk.Entry(loadcell_calibrate_frame, font="Play 10", bg=current_bg_color, fg=current_fg_color, insertbackground=current_fg_color)
-
-calibrate_loadcell_action_button = Canvas(loadcell_calibrate_frame, width=button_width, height=button_height*0.7, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-calibrate_loadcell_action_button_rect = calibrate_loadcell_action_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-calibrate_loadcell_action_button.create_text((button_width/2, button_height*0.7/2), text="Calibrate", font="Play 9 bold", fill=current_fg_color)
-calibrate_loadcell_action_button.bind("<Enter>", lambda event: change_color(calibrate_loadcell_action_button, current_hover_color))
-calibrate_loadcell_action_button.bind("<Leave>", lambda event: change_color(calibrate_loadcell_action_button, current_normal_color))
-calibrate_loadcell_action_button.bind("<Button-1>", lambda event: change_color(calibrate_loadcell_action_button, current_press_color))
-calibrate_loadcell_action_button.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=calibrate_loadcell_func).start())
-
-back_to_main_calibrate_button = Canvas(loadcell_calibrate_frame, width=button_width, height=button_height*0.7, bg=current_bg_color, borderwidth=0, highlightthickness=0)
-back_to_main_calibrate_button_rect = back_to_main_calibrate_button.create_polygon(
-    p1, p2, p3, p4, p5, p6, p7,
-    outline=current_normal_color, width=2,
-    fill=current_fill_color
-)
-back_to_main_calibrate_button.create_text((button_width/2, button_height*0.7/2), text="Back", font="Play 9 bold", fill=current_fg_color)
-back_to_main_calibrate_button.bind("<Enter>", lambda event: change_color(back_to_main_calibrate_button, current_hover_color))
-back_to_main_calibrate_button.bind("<Leave>", lambda event: change_color(back_to_main_calibrate_button, current_normal_color))
-back_to_main_calibrate_button.bind("<Button-1>", lambda event: change_color(back_to_main_calibrate_button, current_press_color))
-back_to_main_calibrate_button.bind("<ButtonRelease-1>", lambda event: back_to_main_calibrate_menu())
-
-
-# 7. Serial Monitor button (Column 0 - leftmost)
-sm_button = Canvas(root,width=button_width,height=button_height, bg=current_bg_color,borderwidth=0,highlightthickness=0)
-sm_button_rect = sm_button.create_polygon(
-p1,p2,p3,p4,p5,p6,p7,
-outline=current_normal_color, width=2,
-fill=current_fill_color
-)
-sm_button.create_text((button_width/2,button_height/2), text="Serial Monitor", font="Play 12 bold",fill=current_fg_color)
-sm_button.grid(row=4, column=0, pady=5, padx=5, sticky='ew')
-sm_button.bind("<Enter>", lambda event: change_color(sm_button,current_hover_color))
-sm_button.bind("<Leave>", lambda event: change_color(sm_button,current_normal_color))
-sm_button.bind("<Button-1>", lambda event: change_color(sm_button,current_press_color))
-sm_button.bind("<ButtonRelease-1>", lambda event: SerialMonitor())
-
-
+# Serial Monitor frame
 serial_frame = tk.Frame(root, bg=current_bg_color)
 serial_monitor = scrolledtext.ScrolledText(serial_frame, height=5, # Increased height for better visibility
                             font = ("Arial", 12), bg=current_bg_color, fg=current_fg_color, insertbackground=current_fg_color)
@@ -1462,8 +1495,5 @@ if expanded:
 
 
 load_images()
-# Calling apply_theme one last time to ensure all dynamically created widgets also have the correct theme.
-# For example, if images load later, or specific widget properties are set after the initial apply_theme,
-# this ensures consistency.
 apply_theme()
 root.mainloop()

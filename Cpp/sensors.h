@@ -6,6 +6,8 @@ public:
   int DOUT;
   int CLK; 
   float weight;
+  float calibration_factor = 430.69; // Start with a default value
+
   // Constructor
   loadCell(int DOUT, int CLK) {
     this->DOUT = DOUT;
@@ -15,11 +17,11 @@ public:
     scale.begin(DOUT, CLK);
     }
   float thrustReading() {
-    weight = scale.get_units(10); // Does this produce a delay?
+    weight = scale.get_units(1); // Does this produce a delay?
     return weight;
   }
   void loadCell_Zero() {
-    scale.set_scale(); // Raw data scale
+    scale.set_scale(calibration_factor); // Raw data scale
     scale.tare(); // Reset the reading to 0
   }
 };

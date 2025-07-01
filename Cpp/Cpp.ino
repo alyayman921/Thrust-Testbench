@@ -17,7 +17,9 @@ void setup() {
   Serial.begin(9600);
   Motor1.connect();
   Motor1.speed(0);
-  //ThrustCell1.connect();
+  Serial.println("tryin Connected");
+  ThrustCell1.connect();
+  Serial.println("Connected");
   CS1.connect();
   IR1.connect();
   pinMode(LED_BUILTIN,OUTPUT);
@@ -58,8 +60,12 @@ void loop() {
 
       // Loadcell calibration strings
       //--------------------------------
-      }else if(command=="z"){
+      }else if(command=="zl1"){
         ThrustCell1.loadCell_Zero();
+      }else if(command=="zl2"){
+        //ThrustCell2.loadCell_Zero();
+      }else if(command=="zl3"){
+        //ThrustCell3.loadCell_Zero();
       }else{
         // if not a special string,it must be motor speed->send pwm value to motor and get readings
         PWM=command.toFloat();
@@ -74,6 +80,8 @@ void loop() {
   }
   t2=millis();
   SendtoDataAquisition(20); // 20 Hz
+  //T=ThrustCell1.thrustReading(); // infinite loop while disconnected
+  //Serial.println(T);//Serial.print(',');
 } 
 
 void SendtoDataAquisition(float freq){ // Send to data Aquisition
@@ -85,7 +93,7 @@ void SendtoDataAquisition(float freq){ // Send to data Aquisition
             //Readings from sensors
             //Current=CS1.currentReading(); // fix this delay please
             RPM=IR1.rpmReading();
-            //T=ThrustCell1.thrustReading(); // infinite loop while disconnected
+            T=ThrustCell1.thrustReading(); // infinite loop while disconnected
             //Torque=??
             
             //time,pwm,current,rpm,thrust,torque$
@@ -99,8 +107,10 @@ void SendtoDataAquisition(float freq){ // Send to data Aquisition
             // Thrust reading
             Serial.print(T);Serial.print(',');
             // Torque reading
-            Serial.print(Torque);
-            Serial.print("$"); // NO NEW LINE
+            Serial.print(Torque);Serial.print("$"); // NO NEW LINE
+
+            //T=ThrustCell1.thrustReading();
+            //Serial.println(T);//Serial.print(',');
             t1=t2;
   }
 }
