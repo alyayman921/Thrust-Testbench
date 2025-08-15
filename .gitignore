@@ -1,7 +1,9 @@
 __pycache__/
 .obsidian/
+dist/
 logged_runs/*
 Cpp/.theia/
 build.bat
 *.zip
 render.m
+flet_bench.py

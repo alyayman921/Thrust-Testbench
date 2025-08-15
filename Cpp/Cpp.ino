@@ -17,13 +17,12 @@ void setup() {
   Serial.begin(9600);
   Motor1.connect();
   Motor1.speed(0);
-  Serial.println("tryin Connected");
   ThrustCell1.connect();
-  Serial.println("Connected");
   CS1.connect();
   IR1.connect();
   pinMode(LED_BUILTIN,OUTPUT);
   pinMode(A0,INPUT); 
+  Serial.println("All Sensors Operational");
 }
 
 void loop() {
@@ -93,7 +92,8 @@ void SendtoDataAquisition(float freq){ // Send to data Aquisition
             //Readings from sensors
             //Current=CS1.currentReading(); // fix this delay please
             RPM=IR1.rpmReading();
-            T=ThrustCell1.thrustReading(); // infinite loop while disconnected
+            //T=ThrustCell1.thrustReading(); // infinite loop while disconnected
+            
             //Torque=??
             
             //time,pwm,current,rpm,thrust,torque$

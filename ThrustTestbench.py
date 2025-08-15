@@ -158,12 +158,12 @@ def save_data_config():
         config.write(configfile)
 
 def save_loadcells_config():
-    global cf1, cf2, cf3, calibations
+    global cf1, cf2, cf3, calibrations
     config = configparser.ConfigParser()
     config['Calibration Factors'] = {
-            'loadcell1': str(calibations[0]), # Ensure these are saved as strings
-            'loadcell2': str(calibations[1]),
-            'loadcell3': str(calibations[2])
+            'loadcell1': str(calibrations[0]), # Ensure these are saved as strings
+            'loadcell2': str(calibrations[1]),
+            'loadcell3': str(calibrations[2])
     }
     with open(LOADCELLS_CONFIG_FILE, 'w') as configfile:
         config.write(configfile)
@@ -184,10 +184,10 @@ settings = [
     float(config_test['TEST'].get('pwm_end', '100')),
     float(config_test['TEST'].get('Timestep', '2'))
 ]
-calibations = [
-    float(config_loadcells['Calibration Factors'].get('loadcell1', '7050')),
-    float(config_loadcells['Calibration Factors'].get('loadcell2', '7050')),
-    float(config_loadcells['Calibration Factors'].get('loadcell3', '7050'))
+calibrations = [
+    float(config_loadcells['Calibration Factors'].get('loadcell1', '430')),
+    float(config_loadcells['Calibration Factors'].get('loadcell2', '430')),
+    float(config_loadcells['Calibration Factors'].get('loadcell3', '430'))
 ]
 test_name = config_test['TEST'].get('test_name', '') # Load initial test name from config
 #Serial Communication
@@ -220,7 +220,7 @@ def serial_read_start():
         serial_thread.start()
 
 def SerialRefresh():
-    global Serial, data, serial_thread_running, data_map, calibations, raw_reading
+    global Serial, data, serial_thread_running, data_map, calibrations, raw_reading,serial_thread
     while serial_thread_running:
         try:
             readings = Serial.read()
@@ -242,8 +242,10 @@ def SerialRefresh():
                                 data_map['Current'].append(float(values[2]))
                                 data_map['RPM'].append(float(values[3]))
                                 raw_reading = float(values[4])
-                                # Assuming values[4] is for loadcell 1, if multiple loadcells are used this needs to be adapted.
-                                data_map['Thrust'].append(float(values[4]))
+                                try:
+                                    data_map['Thrust'].append(float(values[4])*calibrations[0])
+                                except Exception as e:
+                                    print(e)
                                 data_map['Torque'].append(float(values[5]))
                                 # Update graph in real-Time
                                 root.after(0, update_graph)
@@ -258,13 +260,14 @@ def SerialRefresh():
         except Exception as e:
             print(f"Error reading from serial: {e}")
             serial_thread_running = False # Stop thread on error
+            serial_thread=False
             break
 
 
 # Button Functions
 #------------------------------------------------
 def connect_clicked():
-    global connected, serial_thread_running, Serial
+    global connected, serial_thread_running, Serial,serial_thread
     refreshSerialPorts()
     if connected:
         print('stopped')
@@ -281,7 +284,7 @@ def connect_clicked():
             if not COM:
                 print("No serial port selected.")
                 return
-            Serial = Serial_Communications(COM, 9600)
+            Serial = Serial_Communications(COM, 115200)
             connected = True
             print('started')
             connect.itemconfig(connect_toggle_text, text='Connected')
@@ -432,7 +435,6 @@ def toggle_advanced_mode_panel():
         # Ensure initial state of calibration section within advanced mode
         show_default_calibration_options()
 
-
 def set_autolog_in_main_window(value):
     global autolog
     autolog = value
@@ -543,18 +545,17 @@ def zero_loadcell_func():
     print(f"Zero command sent for Loadcell {selected_loadcell}")
 
 def calibrate_loadcell_func():
-    global raw_reading, calibations
+    global raw_reading, calibrations
     selected_loadcell = loadcell_var.get()
     known_mass_str = known_mass_entry.get()
-
     try:
         known_mass = float(known_mass_str)
         # Convert selected_loadcell to an integer index (1-based to 0-based)
         loadcell_index = int(selected_loadcell) - 1
-        if 0 <= loadcell_index < len(calibations):
+        if 0 <= loadcell_index < len(calibrations):
             if raw_reading is not None and raw_reading != 0:
-                calibations[loadcell_index] = known_mass * 9.81 / raw_reading
-                print(f"Loadcell {selected_loadcell} calibrated. New factor: {calibations[loadcell_index]}")
+                calibrations[loadcell_index] = known_mass * 9.81 / raw_reading
+                print(f"Loadcell {selected_loadcell} calibrated. New factor: {calibrations[loadcell_index]}")
                 save_loadcells_config() # Save updated calibration factors
             else:
                 print("Error: Raw reading is not available or is zero. Perform a reading with known mass.")
@@ -1006,11 +1007,21 @@ def animate_gif():
 #------------------------------------------------
 def debug_shortcuts(event):
     # Define actions based on the key pressed
+    '''
     if event.name == 'space':
         global kill
         if not kill:
             Send("e")
         kill = True
+    '''
+    if event.name == 'ctrl':
+        t1=time.time()
+        t2=t1
+        while (t2 - t1)<0.2:
+            t2=time.time()
+            if event.name == 'b':
+                connect_clicked()
+    pass
 
 def detect_key_press():
     # Hook the key press event to the debug_shortcuts function
@@ -1175,7 +1186,7 @@ outline=current_normal_color, width=2,
 fill=current_fill_color
 )
 sm_button.create_text((button_width/2,button_height/2), text="Serial Monitor", font="Play 12 bold",fill=current_fg_color)
-sm_button.grid(row=4, column=0, pady=5, padx=5, sticky='ew')
+sm_button.grid(row=4, column=0, pady=5, padx=5)
 sm_button.bind("<Enter>", lambda event: change_color(sm_button,current_hover_color))
 sm_button.bind("<Leave>", lambda event: change_color(sm_button,current_normal_color))
 sm_button.bind("<Button-1>", lambda event: change_color(sm_button,current_press_color))
@@ -1189,7 +1200,7 @@ log_data_button_rect = log_data_button.create_polygon(
     fill=current_fill_color
 )
 log_data_toggle_text = log_data_button.create_text((button_width/2, button_height/2), text="Log Data", font="Play 12 bold", fill=current_fg_color)
-log_data_button.grid(row=4, column=1, pady=5, padx=5, sticky='ew')
+log_data_button.grid(row=4, column=1, pady=5, padx=5)
 log_data_button.bind("<Enter>", lambda event: change_color(log_data_button, current_hover_color))
 log_data_button.bind("<Leave>", lambda event: change_color(log_data_button, current_normal_color))
 log_data_button.bind("<Button-1>", lambda event: change_color(log_data_button, current_press_color))
@@ -1203,7 +1214,7 @@ loggerB = logger.create_polygon(
     fill=current_fill_color
 )
 logger.create_text((button_width/2, button_height/2), text="Advanced Mode", font="Play 12 bold", fill=current_fg_color) # Renamed to Advanced Mode
-logger.grid(row=4, column=2, pady=3, padx=5, sticky='ew')
+logger.grid(row=4, column=2, pady=3, padx=5)
 logger.bind("<Enter>", lambda event: change_color(logger, current_hover_color))
 logger.bind("<Leave>", lambda event: change_color(logger, current_normal_color))
 logger.bind("<Button-1>", lambda event: change_color(logger, current_press_color))
@@ -1217,7 +1228,7 @@ edit_test_button_rect = edit_test_button.create_polygon(
     fill=current_fill_color
 )
 edit_test_button_text = edit_test_button.create_text((button_width/2, button_height/2), text="Edit Test", font="Play 12 bold", fill=current_fg_color) # Renamed to Edit Test
-edit_test_button.grid(row=4, column=3, pady=5, padx=5, sticky='ew') # Changed column from 4 to 3
+edit_test_button.grid(row=4, column=3, pady=5, padx=5) # Changed column from 4 to 3
 edit_test_button.bind("<Enter>", lambda event: change_color(edit_test_button, current_hover_color))
 edit_test_button.bind("<Leave>", lambda event: change_color(edit_test_button, current_normal_color))
 edit_test_button.bind("<Button-1>", lambda event: change_color(edit_test_button, current_press_color))
@@ -1231,7 +1242,7 @@ startB = start.create_polygon(
     fill=current_fill_color
 )
 start_toggle_text = start.create_text((button_width/2, button_height/2), text="Start Test", font="Play 12 bold", fill=current_fg_color)
-start.grid(row=4, column=4, pady=5, padx=5, sticky='ew') # Changed column from 5 to 4
+start.grid(row=4, column=4, pady=5, padx=5) # Changed column from 5 to 4
 start.bind("<Enter>", lambda event: change_color(start, current_hover_color))
 start.bind("<Leave>", lambda event: change_color(start, current_normal_color))
 start.bind("<Button-1>", lambda event: change_color(start, current_press_color))
@@ -1245,7 +1256,7 @@ connectB = connect.create_polygon(
     fill=current_fill_color
 )
 connect_toggle_text = connect.create_text((button_width/2, button_height/2), text="Connect", font="Play 12 bold", fill=current_fg_color)
-connect.grid(row=4, column=5, pady=5, padx=5, sticky='ew') # Changed column from 6 to 5
+connect.grid(row=4, column=5, pady=5, padx=5) # Changed column from 6 to 5
 connect.bind("<Enter>", lambda event: change_color(connect, current_hover_color))
 connect.bind("<Leave>", lambda event: change_color(connect, current_normal_color))
 connect.bind("<Button-1>", lambda event: change_color(connect, current_press_color))
@@ -1253,7 +1264,7 @@ connect.bind("<ButtonRelease-1>", lambda event: connect_clicked())
 
 # Serial Port Picker - Directly above Connect button (Column 5, Row 3)
 port_frame = tk.Frame(root, bg=current_bg_color)
-port_frame.grid(row=3, column=5, pady=10, sticky='s', padx=(0, 5)) # Reduced padx on right
+port_frame.grid(row=3, column=5, pady=10, padx=(0, 5)) # Reduced padx on right
 port_frame.bind("<Enter>", refreshSerialPorts)
 serial_title = tk.Label(port_frame, font=('Play', 14), fg=current_fg_color, bg=current_bg_color, text="Serial Port :")
 serial_title.pack(side="left")
